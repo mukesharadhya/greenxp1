@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GreenXP</title>
+<style>
+:root{--bg:#effaf5;--card:#fff;--ink:#0e3b36;--mute:#4f7a73;--line:#cfe9df;--pri:#19b37a;--prid:#0f8a5c;--xp:#ffc83d}
+@media(prefers-color-scheme:dark){:root{--bg:#0a1f1c;--card:#12322d;--ink:#e6f6f1;--mute:#8fbdb3;--line:#1f4a43}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,sans-serif}
+.app{max-width:520px;margin:auto;padding:1rem 1rem 5.5rem}h1,h2,h3{margin:.2rem 0 .5rem}
+.card{background:var(--card);border:2px solid var(--line);border-radius:16px;padding:1rem;margin-bottom:.7rem}
+.row{display:flex;justify-content:space-between;align-items:center;gap:.6rem}.mute{color:var(--mute);font-size:.9rem}
+button{font:700 1rem system-ui;border:0;border-radius:12px;padding:.65rem 1rem;background:var(--pri);color:#fff;cursor:pointer;border-bottom:3px solid var(--prid)}
+button.o{background:transparent;color:var(--prid);border:2px solid var(--line)}button.s{padding:.35rem .8rem;font-size:.9rem}
+input,select{width:100%;font:inherit;padding:.65rem;border-radius:12px;border:2px solid var(--line);background:var(--card);color:var(--ink);margin:.2rem 0 .6rem}
+.pill{background:var(--xp);color:#4a3500;border-radius:99px;padding:.1rem .6rem;font-weight:700;font-size:.85rem}
+.tabs{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:center;gap:.3rem;background:var(--card);border-top:2px solid var(--line);padding:.4rem .4rem calc(.4rem + env(safe-area-inset-bottom,0px))}
+.tabs button{background:none;color:var(--mute);border:0;padding:.4rem .7rem}.tabs button.on{color:var(--prid);background:var(--line)}
+.err{color:#b3261e;font-weight:700}.bar{height:12px;background:var(--line);border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pri)}
+</style></head>
+<body><div class="app" id="app">Loading…</div><nav class="tabs" id="tabs" hidden></nav>
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+const db = supabase.createClient(GXP.SUPABASE_URL, GXP.SUPABASE_KEY);
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+const LV = [[0,"Eco Starter","🌱"],[100,"Green Rookie","🍃"],[300,"Green Warrior","🌿"],[600,"Eco Champion","🌳"],[1000,"Planet Hero","🌎"],[2000,"Eco Legend","🏆"]];
+let me = null, tab = "home";
+async function api(path, body, method = "POST") {
+  const { data: { session } } = await db.auth.getSession();
+  const r = await fetch(GXP.API_URL + path, { method, headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || "Request failed");
+  return j;
+}
+const say = (m, bad) => { const e = $("msg"); if (e) { e.textContent = m; e.className = bad ? "err" : "mute"; } };
+
+async function init() {
+  const { data: { session } } = await db.auth.getSession();
+  if (!session) return authScreen();
+  me = (await db.from("profiles").select("*").eq("id", session.user.id).single()).data;
+  if (!me.usn || !me.department) return profileScreen();
+  const { data: m } = await db.from("memberships").select("status").eq("user_id", me.id).in("status", ["active", "waived"]).limit(1);
+  if (!m || !m.length) return payScreen();
+  $("tabs").hidden = false; show("home");
+}
+async function authScreen() {
+  $("tabs").hidden = true;
+  const { data: cs } = await db.from("colleges").select("id,name");
+  $("app").innerHTML = `<h1>🌱 GreenXP</h1><p class="mute">Earn XP. Go Green. Make an Impact.</p><div class="card">
+  <label>College</label><select id="col">${(cs||[]).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select>
+  <label>Full name (sign-up only)</label><input id="nm"><label>Email</label><input id="em" type="email"><label>Password</label><input id="pw" type="password">
+  <div class="row"><button onclick="signup()">Sign up</button><button class="o" onclick="login()">Log in</button></div><p id="msg"></p></div>`;
+}
+async function signup() {
+  const { error } = await db.auth.signUp({ email: $("em").value, password: $("pw").value, options: { data: { full_name: $("nm").value, college_id: $("col").value } } });
+  if (error) return say(error.message, 1);
+  say("Account created. If email confirmation is on, check your inbox, then log in.");
+}
+async function login() {
+  const { error } = await db.auth.signInWithPassword({ email: $("em").value, password: $("pw").value });
+  error ? say(error.message, 1) : init();
+}
+function profileScreen() {
+  $("app").innerHTML = `<h2>Your details</h2><div class="card"><label>USN</label><input id="usn"><label>Department</label>
+  <select id="dep">${["CSE","ISE","ECE","EEE","ME"].map(d => `<option>${d}</option>`).join("")}</select>
+  <label>Year</label><input id="yr" type="number" min="1" max="4" value="1"><label>Mobile (never shown publicly)</label><input id="ph">
+  <label><input type="checkbox" id="ok" style="width:auto"> I accept the Terms, Privacy and Refund policies and understand points are not carbon credits.</label>
+  <p><button onclick="saveProfile()">Continue</button></p><p id="msg"></p></div>`;
+}
+async function saveProfile() {
+  if (!$("usn").value.trim() || !$("ok").checked) return say("Add your USN and accept the terms.", 1);
+  const { error } = await db.from("profiles").update({ usn: $("usn").value.trim(), department: $("dep").value, year: +$("yr").value, phone: $("ph").value }).eq("id", me.id);
+  error ? say(error.message, 1) : init();
+}
+async function payScreen() {
+  const { data: f } = await db.from("fee_settings").select("amount,currency").eq("college_id", me.college_id).eq("active", true).limit(1).single();
+  $("app").innerHTML = `<h2>Activate your year</h2><div class="card"><h1>₹${f ? f.amount : "-"}</h1><p class="mute">Includes XP tracking, badges, challenges, leaderboards and your annual certificate.</p>
+  <button onclick="pay()">Pay now</button><p id="msg"></p></div>`;
+}
+async function pay() {
+  try {
+    const o = await api("/api/payments/create-order");
+    new Razorpay({ key: o.keyId, order_id: o.orderId, amount: o.amount, currency: o.currency, name: "GreenXP",
+      handler: async r => { try { await api("/api/payments/verify", r); init(); } catch (e) { say(e.message, 1); } } }).open();
+  } catch (e) { say(e.message, 1); }
+}
+function show(t) {
+  tab = t;
+  const T = [["home","🏠 Home"],["earn","⭐ Earn"],["ranks","🏆 Ranks"],["cert","🎓 Certificate"]];
+  if (["admin","super_admin"].includes(me.role)) T.push(["admin","🛠 Admin"]);
+  $("tabs").innerHTML = T.map(x => `<button class="${x[0]==t?"on":""}" onclick="show('${x[0]}')">${x[1]}</button>`).join("") + `<button onclick="db.auth.signOut().then(init)">Out</button>`;
+  ({ home, earn, ranks, cert, admin })[t]();
+}
+async function home() {
+  const { data } = await db.rpc("my_xp_summary"); const s = data && data[0] || { earned: 0, spendable: 0, year_earned: 0 };
+  const e = +s.earned, l = [...LV].reverse().find(x => e >= x[0]), n = LV.find(x => x[0] > e), p = n ? Math.round((e - l[0]) / (n[0] - l[0]) * 100) : 100;
+  $("app").innerHTML = `<h2>Hi ${esc((me.full_name||"").split(" ")[0])} ${l[2]}</h2><div class="card"><div class="row"><b style="font-size:1.8rem">${e} XP</b><span class="pill">${l[1]}</span></div>
+  <div class="bar" style="margin:.6rem 0"><i style="width:${p}%"></i></div><span class="mute">${n ? n[0]-e+" XP to "+n[1] : "Top level"} · ${s.spendable} XP to spend · ${s.year_earned} XP this year</span></div>
+  <p class="mute">GreenXP points are reward points, not carbon credits or money.</p>`;
+}
+async function earn() {
+  const { data } = await db.from("activities").select("*").eq("active", true).order("category");
+  $("app").innerHTML = `<h2>Earn XP</h2><p id="msg" class="mute"></p>` + (data||[]).map(a => `<div class="card row"><div><b>${esc(a.name)}</b><br><span class="mute">${esc(a.category)} · ${a.frequency_limit} per ${a.frequency_period} · ${({self:"instant",photo:"photo",photo_admin:"photo + admin",qr_event:"event code",automatic:"automatic"})[a.verification_type]}</span></div>
+  ${a.verification_type==="automatic" ? '<span class="mute">Auto</span>' : `<span><span class="pill">+${a.xp_value}</span> <button class="s" onclick='doAct(${JSON.stringify(a)})'>Go</button></span>`}</div>`).join("");
+}
+async function doAct(a) {
+  try {
+    const body = { activityId: a.id };
+    if (a.verification_type === "qr_event") body.eventCode = prompt("Enter the event code");
+    if (["photo", "photo_admin"].includes(a.verification_type)) {
+      const f = await new Promise(r => { const i = document.createElement("input"); i.type = "file"; i.accept = "image/*"; i.capture = "environment"; i.onchange = () => r(i.files[0]); i.click(); });
+      if (!f) return;
+      const buf = await f.arrayBuffer();
+      body.proofHash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", buf))].map(b => b.toString(16).padStart(2, "0")).join("");
+      body.proofPath = `${me.id}/${crypto.randomUUID()}.jpg`;
+      const up = await db.storage.from("proofs").upload(body.proofPath, f, { contentType: f.type });
+      if (up.error) throw up.error;
+    }
+    const r = await api("/api/submissions", body);
+    say(r.xp ? `+${r.xp} XP!` : "Sent. XP arrives once an admin verifies it.");
+  } catch (e) { say(e.message, 1); }
+}
+async function ranks() {
+  const { data } = await db.rpc("get_leaderboard", { p_period: "all", p_limit: 50 });
+  $("app").innerHTML = `<h2>Leaderboard</h2>` + ((data||[]).map(r => `<div class="card row"><b>${r.rank}</b><span style="flex:1;margin-left:.6rem">${esc(r.display_name)}<br><span class="mute">${esc(r.department)}</span></span><b>${r.xp} XP</b></div>`).join("") || `<p class="mute">No XP earned yet. Be the first.</p>`);
+}
+async function cert() {
+  const { data } = await db.from("certificates").select("*").eq("user_id", me.id);
+  $("app").innerHTML = `<h2>Annual certificate</h2>` + ((data||[]).map(c => `<div class="card" style="text-align:center;border:3px double var(--pri)"><div class="mute">GreenXP</div><h2>Certificate of ${esc(c.tier)}</h2><p>${esc(me.full_name)} · ${esc(me.usn)}</p>
+  <p>${c.xp_earned} verified XP · ${c.activities_count} activities · est. ${c.estimated_co2e} kg CO₂e*</p><b>ID: ${esc(c.certificate_code)}</b><p class="mute" style="font-size:.75rem">*Estimate based on GreenXP's methodology. Points are not carbon credits.</p><button class="s" onclick="window.print()">Print / save as PDF</button></div>`).join("") || `<p class="mute">Certificates are issued at year end for students with 100+ verified XP.</p>`) +
+  `<h3>Verify a certificate</h3><div class="card"><input id="vc" placeholder="Certificate ID"><button class="s" onclick="verifyCert()">Verify</button><p id="vr"></p></div>`;
+}
+async function verifyCert() {
+  const { data } = await db.rpc("verify_certificate", { p_code: $("vc").value }); const r = data && data[0];
+  $("vr").innerHTML = r ? `<b>${esc(r.status).toUpperCase()}</b>: ${esc(r.student_name)}, ${esc(r.tier)}, ${esc(r.academic_year)}, ${esc(r.college)}` : "Not found";
+}
+async function admin() {
+  $("app").innerHTML = `<h2>Verification queue</h2><p id="msg" class="mute">Loading…</p><div id="q"></div><p><button class="o" onclick="issueAll()">Issue year-end certificates</button></p>`;
+  try {
+    const q = await api("/api/admin/submissions", null, "GET");
+    say(q.length ? "" : "Nothing waiting.");
+    $("q").innerHTML = q.map(s => `<div class="card"><b>${esc(s.activities.name)}</b> <span class="pill">+${s.activities.xp_value}</span><br><span class="mute">${esc(s.profiles.full_name)} · ${esc(s.profiles.usn)}</span>
+    ${s.proof_url ? `<br><img src="${s.proof_url}" alt="Proof" style="max-width:100%;max-height:180px;border-radius:10px;margin:.4rem 0">` : ""}<br>
+    <button class="s" onclick="review('${s.id}',true)">Approve</button> <button class="s o" onclick="review('${s.id}',false)">Reject</button></div>`).join("");
+  } catch (e) { say(e.message, 1); }
+}
+async function review(id, approve) { try { await api(`/api/admin/submissions/${id}/review`, { approve, reason: approve ? null : prompt("Reason for rejection") }); admin(); } catch (e) { say(e.message, 1); } }
+async function issueAll() { try { const r = await api("/api/admin/certificates/issue"); say(`${r.issued} certificate(s) issued.`); } catch (e) { say(e.message, 1); } }
+init();
+</script></body></html>
