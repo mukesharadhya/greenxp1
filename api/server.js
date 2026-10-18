@@ -128,21 +128,76 @@ app.post("/api/rewards/:id/redeem", auth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
-// 4. Admin
+// 4. Admin dashboard. Submissions reference profiles twice (student and reviewer), so each embed names its foreign key.
+const SUB_COLS = "id,submitted_at,proof_path,proof_hash,verification_status,rejection_reason,verified_at," +
+  "activities(name,category,xp_value,verification_type)," +
+  "student:profiles!activity_submissions_user_id_fkey!inner(id,full_name,usn,department,year,college_id)," +
+  "reviewer:profiles!activity_submissions_verified_by_fkey(full_name)";
+const countOf = async (q) => { const { count, error } = await q; if (error) throw error; return count || 0; };
+
+app.get("/api/admin/stats", auth, admin, wrap(async (req, res) => {
+  const college = req.profile.college_id, weekAgo = new Date(Date.now() - 7 * 864e5).toISOString();
+  const subs = () => db.from("activity_submissions").select("id,student:profiles!activity_submissions_user_id_fkey!inner(college_id)", { count: "exact", head: true })
+    .eq("student.college_id", college);
+  const [pending, approvedWeek, rejectedWeek, members, students] = await Promise.all([
+    countOf(subs().eq("verification_status", "pending")),
+    countOf(subs().eq("verification_status", "verified").not("verified_by", "is", null).gte("verified_at", weekAgo)),
+    countOf(subs().eq("verification_status", "rejected").gte("verified_at", weekAgo)),
+    countOf(db.from("memberships").select("id,p:profiles!memberships_user_id_fkey!inner(college_id)", { count: "exact", head: true })
+      .eq("p.college_id", college).in("status", ["active", "waived"])),
+    countOf(db.from("profiles").select("id", { count: "exact", head: true }).eq("college_id", college).eq("role", "student")),
+  ]);
+  res.json({ pending, approvedWeek, rejectedWeek, members, students });
+}));
+
 app.get("/api/admin/submissions", auth, admin, wrap(async (req, res) => {
-  const data = must(await db.from("activity_submissions").select("id,submitted_at,proof_path,activities(name,xp_value),profiles!inner(full_name,usn,college_id)")
-    .eq("verification_status", "pending").eq("profiles.college_id", req.profile.college_id).order("submitted_at").limit(100)) || [];
+  const status = ["pending", "verified", "rejected"].includes(req.query.status) ? req.query.status : "pending";
+  let q = db.from("activity_submissions").select(SUB_COLS).eq("verification_status", status).eq("student.college_id", req.profile.college_id);
+  if (status === "verified") q = q.not("verified_by", "is", null); // admin-approved only, not instant activities
+  q = status === "pending" ? q.order("submitted_at") : q.order("verified_at", { ascending: false });
+  const data = must(await q.limit(100)) || [];
+
   const paths = data.filter((s) => s.proof_path).map((s) => s.proof_path);
   if (paths.length) {
     const urls = new Map(must(await db.storage.from("proofs").createSignedUrls(paths, 600)).map((u) => [u.path, u.signedUrl]));
     for (const s of data) if (s.proof_path) s.proof_url = urls.get(s.proof_path);
   }
+  // Warnings for the reviewer: the same photo used in other submissions, and the student's review history.
+  const hashes = [...new Set(data.map((s) => s.proof_hash).filter(Boolean))];
+  if (hashes.length) {
+    const others = must(await db.from("activity_submissions").select("id,user_id,proof_hash").in("proof_hash", hashes));
+    for (const s of data) {
+      const dup = others.filter((o) => o.proof_hash === s.proof_hash && o.id !== s.id);
+      if (dup.length) s.duplicate = { count: dup.length, otherStudent: dup.some((o) => o.user_id !== s.student.id) };
+    }
+  }
+  const studentIds = [...new Set(data.map((s) => s.student.id))];
+  if (status === "pending" && studentIds.length) {
+    const past = must(await db.from("activity_submissions").select("user_id,verification_status").in("user_id", studentIds)
+      .not("verified_by", "is", null));
+    for (const s of data) {
+      const mine = past.filter((p) => p.user_id === s.student.id);
+      s.history = { approved: mine.filter((p) => p.verification_status === "verified").length, rejected: mine.filter((p) => p.verification_status === "rejected").length };
+    }
+  }
+  for (const s of data) { delete s.proof_hash; delete s.proof_path; }
   res.json(data);
 }));
-app.post("/api/admin/submissions/:id/review", auth, admin, wrap(async (req, res) => {
-  const { error } = await db.rpc("review_submission", { p_id: req.params.id, p_admin: req.user.id, p_approve: !!req.body.approve, p_reason: req.body.reason || null });
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ ok: true });
+
+// Approve or reject one or many submissions. Admins cannot review their own.
+app.post("/api/admin/submissions/review", auth, admin, wrap(async (req, res) => {
+  const { ids, approve, reason } = req.body;
+  if (!Array.isArray(ids) || !ids.length || ids.length > 100 || !ids.every((id) => /^[0-9a-f-]{36}$/i.test(id)))
+    return res.status(400).json({ error: "Choose between 1 and 100 submissions" });
+  const own = new Set(must(await db.from("activity_submissions").select("id").in("id", ids).eq("user_id", req.user.id)).map((s) => s.id));
+  const result = { done: 0, failed: [] };
+  for (const id of ids) {
+    if (own.has(id)) { result.failed.push({ id, error: "You can't review your own submission" }); continue; }
+    const { error } = await db.rpc("review_submission", { p_id: id, p_admin: req.user.id, p_approve: !!approve,
+      p_reason: approve ? null : String(reason || "Rejected by admin").slice(0, 500) });
+    error ? result.failed.push({ id, error: error.message }) : result.done++;
+  }
+  res.json(result);
 }));
 app.post("/api/admin/certificates/issue", auth, admin, wrap(async (req, res) => {
   const { data, error } = await db.rpc("issue_certificates", { p_admin: req.user.id });

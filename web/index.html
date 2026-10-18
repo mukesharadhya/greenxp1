@@ -14,9 +14,24 @@ input,select{width:100%;font:inherit;padding:.65rem;border-radius:12px;border:2p
 .pill{background:var(--xp);color:#4a3500;border-radius:99px;padding:.1rem .6rem;font-weight:700;font-size:.85rem}
 .tabs{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:safe center;overflow-x:auto;gap:.3rem;background:var(--card);border-top:2px solid var(--line);padding:.4rem .4rem calc(.4rem + env(safe-area-inset-bottom,0px))}
 .tabs button{background:none;color:var(--mute);border:0;padding:.4rem .7rem;flex-shrink:0;white-space:nowrap}.tabs button.on{color:var(--prid);background:var(--line)}
+.app.wide{max-width:960px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.6rem;margin-bottom:.7rem}
+.stat{background:var(--card);border:2px solid var(--line);border-radius:16px;padding:.8rem}.stat b{display:block;font-size:1.7rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:.7rem}.grid .card{margin:0}
+.proof{width:100%;height:190px;object-fit:cover;border-radius:10px;cursor:zoom-in;display:block;margin-bottom:.5rem;background:var(--line)}
+.noproof{height:60px;display:grid;place-items:center;border:2px dashed var(--line);border-radius:10px;margin-bottom:.5rem}
+.warn{background:#fff3cd;color:#664d03;border-radius:10px;padding:.4rem .6rem;font-size:.9rem;margin:.4rem 0}
+.lb{position:fixed;inset:0;background:rgba(0,0,0,.85);display:grid;place-items:center;z-index:9;cursor:zoom-out}.lb img{max-width:95vw;max-height:90vh;border-radius:10px}
+dialog{background:var(--card);color:var(--ink);border:2px solid var(--line);border-radius:16px;width:min(420px,92vw)}dialog::backdrop{background:rgba(0,0,0,.5)}
+textarea{width:100%;font:inherit;padding:.65rem;border-radius:12px;border:2px solid var(--line);background:var(--card);color:var(--ink);margin:.2rem 0 .6rem}
 .err{color:#b3261e;font-weight:700}.bar{height:12px;background:var(--line);border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pri)}
 </style></head>
 <body><div class="app" id="app">Loading…</div><nav class="tabs" id="tabs" hidden></nav>
+<div class="lb" id="lb" hidden onclick="this.hidden=true"><img alt="Proof photo, full size"></div>
+<dialog id="rj"><form method="dialog"><h3>Reason for rejection</h3><p class="mute">The student sees this reason.</p>
+  <label for="rjs">Common reasons</label><select id="rjs"><option value="">Choose a reason…</option><option>Photo doesn't show the activity</option><option>Photo is unclear or too dark</option><option>Same photo was used before</option><option>Doesn't meet the activity rules</option></select>
+  <label for="rjt">Or write your own</label><textarea id="rjt" rows="3" maxlength="500"></textarea>
+  <div class="row"><button value="cancel" class="o">Cancel</button><button value="ok">Reject</button></div></form></dialog>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
@@ -198,6 +213,7 @@ function show(t) {
   const T = [["home","🏠 Home"],["earn","⭐ Earn"],["fp","🌍 Footprint"],["ranks","🏆 Ranks"],["cert","🎓 Certificate"]];
   if (["admin","super_admin"].includes(me.role)) T.push(["admin","🛠 Admin"]);
   $("tabs").innerHTML = T.map(x => `<button class="${x[0]==t?"on":""}" onclick="show('${x[0]}')">${x[1]}</button>`).join("") + `<button onclick="db.auth.signOut().then(init)">Out</button>`;
+  $("app").classList.toggle("wide", t === "admin");
   ({ home, earn, fp, ranks, cert, admin })[t]();
 }
 async function home() {
@@ -458,26 +474,95 @@ async function verifyCert() {
   const { data } = await db.rpc("verify_certificate", { p_code: $("vc").value }); const r = data && data[0];
   $("vr").innerHTML = r ? `<b>${esc(r.status).toUpperCase()}</b>: ${esc(r.student_name)}, ${esc(r.tier)}, ${esc(r.academic_year)}, ${esc(r.college)}` : "Not found";
 }
+// ---- Admin dashboard ----
+let adminView = "pending", adminData = [], adminSel = new Set();
+const ago = t => {
+  const m = Math.round((Date.now() - Date.parse(t)) / 6e4);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`;
+};
+const VIEWS = [["pending", "⏳ Pending"], ["verified", "✅ Approved"], ["rejected", "❌ Rejected"]];
 async function admin() {
-  $("app").innerHTML = `<div id="ls"></div><h2>Verification queue</h2><p id="msg" class="mute">Loading…</p><div id="q"></div><p><button class="o" onclick="issueAll()">Issue year-end certificates</button></p>`;
+  adminSel = new Set();
+  $("app").innerHTML = `<h2>🛠 Admin dashboard</h2><div id="stats" class="stats"></div>
+  <div class="card"><h3>Activity approvals</h3>
+    <div class="row" style="justify-content:flex-start;flex-wrap:wrap">${VIEWS.map(([k, t]) => `<button class="s${k === adminView ? "" : " o"}" onclick="adminView='${k}';admin()">${t}</button>`).join("")}</div>
+    <label for="af" style="display:block;margin-top:.6rem">Activity</label><select id="af" onchange="renderQueue()"><option value="">All activities</option></select>
+    <div id="bulk"></div><p id="msg" class="mute">Loading…</p><div id="q"></div></div>
+  <div id="ls"></div>
+  <div class="card"><h3>🎓 Year-end certificates</h3><p class="mute">Issues certificates to members who reached the XP thresholds this academic year. Students who already have one are skipped.</p>
+    <button class="o" onclick="issueAll()">Issue certificates</button><p id="cmsg" class="mute"></p></div>`;
+  loadStats();
   db.rpc("lifestyle_summary").then(({ data: s }) => {
-    if (!s || !s.responses) return;
-    $("ls").innerHTML = `<h2>Student lifestyle baseline</h2><div class="card"><div class="row"><span>${s.responses} students answered</span><b>avg ${(s.avg_total_kg / 1000).toFixed(1)} t CO₂e / year</b></div>` +
+    if (!s || !s.responses || !$("ls")) return;
+    $("ls").innerHTML = `<div class="card"><h3>🌍 Student lifestyle baseline</h3><div class="row"><span>${s.responses} students answered</span><b>avg ${(s.avg_total_kg / 1000).toFixed(1)} t CO₂e / year</b></div>` +
       Object.entries(CATS).map(([k, c]) => `<div class="row mute"><span>${c.icon} ${c.label}</span><span>${s.avg[k]} kg</span></div>`).join("") + `</div>`;
   });
   try {
-    const q = await api("/api/admin/submissions", null, "GET");
-    say(q.length ? "" : "Nothing waiting.");
-    $("q").innerHTML = q.map(s => `<div class="card"><b>${esc(s.activities.name)}</b> <span class="pill">+${s.activities.xp_value}</span><br><span class="mute">${esc(s.profiles.full_name)} · ${esc(s.profiles.usn)}</span>
-    ${s.proof_url ? `<br><img src="${esc(s.proof_url)}" alt="Proof" style="max-width:100%;max-height:180px;border-radius:10px;margin:.4rem 0">` : ""}<br>
-    <button class="s" onclick="review('${s.id}',true)">Approve</button> <button class="s o" onclick="review('${s.id}',false)">Reject</button></div>`).join("");
+    adminData = await api(`/api/admin/submissions?status=${adminView}`, null, "GET");
+    const names = [...new Set(adminData.map(s => s.activities.name))].sort();
+    $("af").innerHTML += names.map(n => `<option>${esc(n)}</option>`).join("");
+    renderQueue();
   } catch (e) { say(e.message, 1); }
 }
-async function review(id, approve) {
-  const reason = approve ? null : prompt("Reason for rejection");
-  if (!approve && reason == null) return; // Cancel means "don't reject"
-  try { await api(`/api/admin/submissions/${id}/review`, { approve, reason }); admin(); } catch (e) { say(e.message, 1); }
+async function loadStats() {
+  try {
+    const s = await api("/api/admin/stats", null, "GET");
+    $("stats").innerHTML = [["Waiting for approval", s.pending], ["Approved (7 days)", s.approvedWeek], ["Rejected (7 days)", s.rejectedWeek], ["Active members", `${s.members} / ${s.students}`]]
+      .map(([t, v]) => `<div class="stat"><b>${v}</b><span class="mute">${t}</span></div>`).join("");
+  } catch (e) { $("stats").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
 }
-async function issueAll() { try { const r = await api("/api/admin/certificates/issue"); say(`${r.issued} certificate(s) issued.`); } catch (e) { say(e.message, 1); } }
+function renderQueue() {
+  const f = $("af").value, list = adminData.filter(s => !f || s.activities.name === f), pending = adminView === "pending";
+  adminSel = new Set([...adminSel].filter(id => list.some(s => s.id === id)));
+  $("bulk").innerHTML = pending && list.length ? `<div class="row" style="margin:.3rem 0 .6rem;flex-wrap:wrap">
+    <label style="display:flex;gap:.4rem;align-items:center"><input type="checkbox" style="width:auto;margin:0" onchange="selectAll(this.checked)"${adminSel.size === list.length ? " checked" : ""}> Select all (${list.length})</label>
+    <span><button class="s" onclick="reviewMany(true)"${adminSel.size ? "" : " disabled"}>Approve selected${adminSel.size ? ` (${adminSel.size})` : ""}</button>
+    <button class="s o" onclick="reviewMany(false)"${adminSel.size ? "" : " disabled"}>Reject selected</button></span></div>` : "";
+  say(list.length ? "" : { pending: "Nothing waiting for approval. 🎉", verified: "No approved submissions yet.", rejected: "No rejected submissions." }[adminView]);
+  $("q").innerHTML = `<div class="grid">${list.map(s => subCard(s, pending)).join("")}</div>`;
+}
+function subCard(s, pending) {
+  const st = s.student, a = s.activities;
+  return `<div class="card">
+  ${s.proof_url ? `<img class="proof" src="${esc(s.proof_url)}" alt="Proof photo for ${esc(a.name)}" onclick="zoom(this.src)">` : `<div class="noproof mute">No photo</div>`}
+  <div class="row"><b>${esc(a.name)}</b><span class="pill">+${a.xp_value}</span></div>
+  <span class="mute">${esc(st.full_name || "Student")} · ${esc(st.usn || "no USN")}${st.department ? " · " + esc(st.department) : ""}${st.year ? " · Year " + st.year : ""}</span><br>
+  <span class="mute">Submitted ${ago(s.submitted_at)}${s.history ? ` · history: ${s.history.approved} approved, ${s.history.rejected} rejected` : ""}</span>
+  ${s.duplicate ? `<div class="warn">⚠ This photo was also used in ${s.duplicate.count} other submission${s.duplicate.count > 1 ? "s" : ""}${s.duplicate.otherStudent ? ", including another student's" : ""}.</div>` : ""}
+  ${pending ? `<div class="row" style="margin-top:.6rem"><label style="display:flex;gap:.4rem;align-items:center"><input type="checkbox" style="width:auto;margin:0" onchange="toggleSel('${s.id}',this.checked)"${adminSel.has(s.id) ? " checked" : ""}> Select</label>
+    <span><button class="s" onclick="reviewMany(true,['${s.id}'])">Approve</button> <button class="s o" onclick="reviewMany(false,['${s.id}'])">Reject</button></span></div>`
+    : `<p class="mute">${s.verification_status === "verified" ? "✅ Approved" : "❌ Rejected"} ${s.verified_at ? ago(s.verified_at) : ""}${s.reviewer ? " by " + esc(s.reviewer.full_name) : ""}${s.rejection_reason ? `<br>Reason: ${esc(s.rejection_reason)}` : ""}</p>`}
+  </div>`;
+}
+function zoom(src) { $("lb").querySelector("img").src = src; $("lb").hidden = false; }
+function toggleSel(id, on) { on ? adminSel.add(id) : adminSel.delete(id); renderQueue(); }
+function selectAll(on) { const f = $("af").value; adminSel = new Set(on ? adminData.filter(s => !f || s.activities.name === f).map(s => s.id) : []); renderQueue(); }
+function askReason() {
+  return new Promise(done => {
+    const d = $("rj"); $("rjs").value = ""; $("rjt").value = "";
+    d.onclose = () => done(d.returnValue === "ok" ? ($("rjt").value.trim() || $("rjs").value || "Rejected by admin") : null);
+    d.returnValue = ""; d.showModal();
+  });
+}
+async function reviewMany(approve, ids = [...adminSel]) {
+  if (!ids.length) return;
+  let reason = null;
+  if (!approve) { reason = await askReason(); if (reason == null) return; }
+  else if (ids.length > 1 && !confirm(`Approve ${ids.length} submissions and award their XP?`)) return;
+  try {
+    const r = await api("/api/admin/submissions/review", { ids, approve, reason });
+    const failed = new Set(r.failed.map(f => f.id));
+    adminData = adminData.filter(s => !ids.includes(s.id) || failed.has(s.id));
+    ids.forEach(id => adminSel.delete(id));
+    renderQueue(); loadStats();
+    if (r.failed.length) say([...new Set(r.failed.map(f => f.error))].join(". "), 1);
+    else say(`${r.done} submission${r.done > 1 ? "s" : ""} ${approve ? "approved, XP awarded" : "rejected"}.`);
+  } catch (e) { say(e.message, 1); }
+}
+async function issueAll() {
+  if (!confirm("Issue year-end certificates now?")) return;
+  try { const r = await api("/api/admin/certificates/issue"); $("cmsg").textContent = `${r.issued} certificate(s) issued.`; }
+  catch (e) { $("cmsg").className = "err"; $("cmsg").textContent = e.message; }
+}
 init();
 </script></body></html>
