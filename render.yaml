@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: greenxp-api
+    runtime: node
+    rootDir: api
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: SUPABASE_URL
+        value: https://eloslvxejendunwoaydm.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+  - type: web
+    name: greenxp-web
+    runtime: static
+    rootDir: web
+    buildCommand: echo "static site"
+    staticPublishPath: .
