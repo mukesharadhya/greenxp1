@@ -159,11 +159,17 @@ app.get("/api/admin/stats", auth, admin, wrap(async (req, res) => {
 app.get("/api/admin/users", auth, admin, wrap(async (req, res) => {
   const status = ["pending", "approved", "rejected"].includes(req.query.status) ? req.query.status : "pending";
   const data = must(await db.from("profiles")
-    .select("id,email,full_name,usn,department,year,phone,created_at,approval_status,approval_note,approved_at," +
-      "approver:profiles!profiles_approved_by_fkey(full_name)")
+    .select("id,email,full_name,usn,department,year,phone,created_at,approval_status,approval_note,approved_at,approved_by")
     .eq("college_id", req.profile.college_id).eq("role", "student").eq("approval_status", status)
-    .order(status === "pending" ? "created_at" : "approved_at", { ascending: status === "pending" }).limit(200));
-  res.json(data || []);
+    .order(status === "pending" ? "created_at" : "approved_at", { ascending: status === "pending" }).limit(200)) || [];
+  // Reviewer names come from a second lookup: the API can't embed profiles into itself.
+  const reviewerIds = [...new Set(data.map((u) => u.approved_by).filter(Boolean))];
+  if (reviewerIds.length) {
+    const names = new Map(must(await db.from("profiles").select("id,full_name").in("id", reviewerIds)).map((r) => [r.id, r.full_name]));
+    for (const u of data) if (u.approved_by) u.approver = { full_name: names.get(u.approved_by) };
+  }
+  for (const u of data) delete u.approved_by;
+  res.json(data);
 }));
 
 app.post("/api/admin/users/review", auth, admin, wrap(async (req, res) => {
