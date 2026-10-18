@@ -67,9 +67,13 @@ const auth = wrap(async (req, res, next) => {
 });
 const admin = (req, res, next) =>
   ["admin", "super_admin"].includes(req.profile.role) ? next() : res.status(403).json({ error: "Admins only" });
+// Students can pay and take part only after a college admin approves their account.
+const approved = (req, res, next) =>
+  req.profile.role !== "student" || req.profile.approval_status === "approved" ? next()
+    : res.status(403).json({ error: "Your account is waiting for approval from your college admin" });
 
 // 1. Payments: the fee comes from the database, never from the browser
-app.post("/api/payments/create-order", auth, wrap(async (req, res) => {
+app.post("/api/payments/create-order", auth, approved, wrap(async (req, res) => {
   const p = req.profile, y = await currentYear(p.college_id);
   if (!y) return res.status(400).json({ error: "No current academic year" });
   const m = must(await db.from("memberships").select("status").eq("user_id", p.id).eq("academic_year_id", y.id).maybeSingle());
@@ -104,7 +108,7 @@ app.post("/api/payments/verify", auth, wrap(async (req, res) => {
 
 // 2. Submissions: membership, limits and event-code checks run in one locked database transaction (submit_activity),
 // so parallel requests cannot get past the frequency limit.
-app.post("/api/submissions", auth, wrap(async (req, res) => {
+app.post("/api/submissions", auth, approved, wrap(async (req, res) => {
   const p = req.profile, { activityId, proofPath, eventCode } = req.body;
   let proofHash = null;
   if (proofPath) {
@@ -122,7 +126,7 @@ app.post("/api/submissions", auth, wrap(async (req, res) => {
 }));
 
 // 3. Rewards
-app.post("/api/rewards/:id/redeem", auth, wrap(async (req, res) => {
+app.post("/api/rewards/:id/redeem", auth, approved, wrap(async (req, res) => {
   const { error } = await db.rpc("redeem_reward", { p_user: req.user.id, p_reward: req.params.id });
   if (error) return res.status(400).json({ error: error.message });
   res.json({ ok: true });
@@ -139,7 +143,8 @@ app.get("/api/admin/stats", auth, admin, wrap(async (req, res) => {
   const college = req.profile.college_id, weekAgo = new Date(Date.now() - 7 * 864e5).toISOString();
   const subs = () => db.from("activity_submissions").select("id,student:profiles!activity_submissions_user_id_fkey!inner(college_id)", { count: "exact", head: true })
     .eq("student.college_id", college);
-  const [pending, approvedWeek, rejectedWeek, members, students] = await Promise.all([
+  const [usersPending, pending, approvedWeek, rejectedWeek, members, students] = await Promise.all([
+    countOf(db.from("profiles").select("id", { count: "exact", head: true }).eq("college_id", college).eq("role", "student").eq("approval_status", "pending")),
     countOf(subs().eq("verification_status", "pending")),
     countOf(subs().eq("verification_status", "verified").not("verified_by", "is", null).gte("verified_at", weekAgo)),
     countOf(subs().eq("verification_status", "rejected").gte("verified_at", weekAgo)),
@@ -147,7 +152,31 @@ app.get("/api/admin/stats", auth, admin, wrap(async (req, res) => {
       .eq("p.college_id", college).in("status", ["active", "waived"])),
     countOf(db.from("profiles").select("id", { count: "exact", head: true }).eq("college_id", college).eq("role", "student")),
   ]);
-  res.json({ pending, approvedWeek, rejectedWeek, members, students });
+  res.json({ usersPending, pending, approvedWeek, rejectedWeek, members, students });
+}));
+
+// New users: students of the admin's college by approval status, newest first.
+app.get("/api/admin/users", auth, admin, wrap(async (req, res) => {
+  const status = ["pending", "approved", "rejected"].includes(req.query.status) ? req.query.status : "pending";
+  const data = must(await db.from("profiles")
+    .select("id,email,full_name,usn,department,year,phone,created_at,approval_status,approval_note,approved_at," +
+      "approver:profiles!profiles_approved_by_fkey(full_name)")
+    .eq("college_id", req.profile.college_id).eq("role", "student").eq("approval_status", status)
+    .order(status === "pending" ? "created_at" : "approved_at", { ascending: status === "pending" }).limit(200));
+  res.json(data || []);
+}));
+
+app.post("/api/admin/users/review", auth, admin, wrap(async (req, res) => {
+  const { ids, approve, reason } = req.body;
+  if (!Array.isArray(ids) || !ids.length || ids.length > 200 || !ids.every((id) => /^[0-9a-f-]{36}$/i.test(id)))
+    return res.status(400).json({ error: "Choose between 1 and 200 users" });
+  const note = approve ? null : String(reason || "Not approved by your college admin").slice(0, 500);
+  const done = must(await db.from("profiles")
+    .update({ approval_status: approve ? "approved" : "rejected", approval_note: note, approved_by: req.user.id, approved_at: new Date().toISOString() })
+    .in("id", ids).eq("college_id", req.profile.college_id).eq("role", "student").select("id"));
+  if (done.length) must(await db.from("audit_logs").insert(done.map((u) => ({ actor_id: req.user.id, action: approve ? "approve_user" : "reject_user",
+    target_type: "profile", target_id: u.id, details: { reason: note } }))));
+  res.json({ done: done.length, failed: ids.filter((id) => !done.some((u) => u.id === id)).map((id) => ({ id, error: "Not a student of your college" })) });
 }));
 
 app.get("/api/admin/submissions", auth, admin, wrap(async (req, res) => {
@@ -220,7 +249,7 @@ const BILL_PROMPT = "This is a household electricity bill, probably from India. 
 const MEDIA = { pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
 const billReads = new Map(); // user id -> { day, n }: a simple cap on paid model calls per student per day
 
-app.post("/api/bills/extract", auth, wrap(async (req, res) => {
+app.post("/api/bills/extract", auth, approved, wrap(async (req, res) => {
   if (!anthropic) return res.status(501).json({ error: "Automatic bill reading isn't switched on yet. Please type the values from your bill." });
   const { path } = req.body;
   if (typeof path !== "string" || !path.startsWith(req.profile.id + "/") || path.includes(".."))
