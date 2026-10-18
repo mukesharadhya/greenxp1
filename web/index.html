@@ -12,8 +12,8 @@ button{font:700 1rem system-ui;border:0;border-radius:12px;padding:.65rem 1rem;b
 button.o{background:transparent;color:var(--prid);border:2px solid var(--line)}button.s{padding:.35rem .8rem;font-size:.9rem}
 input,select{width:100%;font:inherit;padding:.65rem;border-radius:12px;border:2px solid var(--line);background:var(--card);color:var(--ink);margin:.2rem 0 .6rem}
 .pill{background:var(--xp);color:#4a3500;border-radius:99px;padding:.1rem .6rem;font-weight:700;font-size:.85rem}
-.tabs{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:center;gap:.3rem;background:var(--card);border-top:2px solid var(--line);padding:.4rem .4rem calc(.4rem + env(safe-area-inset-bottom,0px))}
-.tabs button{background:none;color:var(--mute);border:0;padding:.4rem .7rem}.tabs button.on{color:var(--prid);background:var(--line)}
+.tabs{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:safe center;overflow-x:auto;gap:.3rem;background:var(--card);border-top:2px solid var(--line);padding:.4rem .4rem calc(.4rem + env(safe-area-inset-bottom,0px))}
+.tabs button{background:none;color:var(--mute);border:0;padding:.4rem .7rem;flex-shrink:0;white-space:nowrap}.tabs button.on{color:var(--prid);background:var(--line)}
 .err{color:#b3261e;font-weight:700}.bar{height:12px;background:var(--line);border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pri)}
 </style></head>
 <body><div class="app" id="app">Loading…</div><nav class="tabs" id="tabs" hidden></nav>
@@ -118,19 +118,26 @@ const CATS = {
   Water:     { label: "Water & waste", icon: "💧", acts: ["Water", "Waste"], tip: "Use a bucket or keep showers short, segregate waste, and carry a reusable bottle and bag." }
 };
 const INDIA_AVG_T = 1.9; // approx. per-person tonnes CO2e per year in India
-// Rough yearly kg CO2e per person from the answers, using typical Indian emission factors.
-function footprint(a) {
+const GRID = 0.71; // kg CO2 per kWh, Indian grid average
+// Rough yearly kg CO2e per person from the questionnaire, per logging category, using typical Indian emission factors.
+function baseline(a) {
   const hh = +a.household;
   const units = +a.units || { hostel: 40, apartment: 50, house: 70 }[a.residence] * hh; // "don't know": typical per-person use
   const cook = { lpg: 340, png: 300, electric: 0, biomass: 400 }; // per household per year
-  const f = {
-    Energy: units * 12 * 0.71 / hh + (a.cooking === "mess" ? 100 : cook[a.cooking] / hh), // grid ~0.71 kg/kWh
-    Transport: +a.distance * 300 * { walk: 0, public: 0.03, two: 0.05, auto: 0.12, car: 0.17 }[a.mode], // ~300 travel days
-    Food: { vegan: 700, veg: 900, egg: 1000, nonveg_some: 1200, nonveg_daily: 1600 }[a.diet]
+  return {
+    transport: +a.distance * 300 * { walk: 0, public: 0.03, two: 0.05, auto: 0.12, car: 0.17 }[a.mode], // ~300 travel days
+    electricity: units * 12 * GRID / hh,
+    cooking: a.cooking === "mess" ? 100 : cook[a.cooking] / hh,
+    food: { vegan: 700, veg: 900, egg: 1000, nonveg_some: 1200, nonveg_daily: 1600 }[a.diet]
       + { rare: 0, sometimes: 50, often: 150 }[a.waste] + { rare: 0, weekly: 50, often: 150 }[a.delivery],
-    Shopping: { low: 50, mid: 150, high: 350 }[a.clothes] + { low: 20, mid: 60, high: 150 }[a.online] + { low: 50, mid: 100, high: 250 }[a.devices],
-    Water: { bucket: 20, short: 40, long: 80 }[a.bath] + { always: 30, sometimes: 80, never: 150 }[a.segregate] + { rare: 10, sometimes: 40, daily: 100 }[a.plastic]
+    shopping: { low: 50, mid: 150, high: 350 }[a.clothes] + { low: 20, mid: 60, high: 150 }[a.online] + { low: 50, mid: 100, high: 250 }[a.devices],
+    waste: { bucket: 20, short: 40, long: 80 }[a.bath] + { always: 30, sometimes: 80, never: 150 }[a.segregate] + { rare: 10, sometimes: 40, daily: 100 }[a.plastic]
   };
+}
+// The questionnaire's own five-category view (stored with the survey and used for the admin averages).
+function footprint(a) {
+  const b = baseline(a);
+  const f = { Energy: b.electricity + b.cooking, Transport: b.transport, Food: b.food, Shopping: b.shopping, Water: b.waste };
   for (const k in f) f[k] = Math.round(f[k]);
   return f;
 }
@@ -188,17 +195,17 @@ async function pay() {
 }
 function show(t) {
   tab = t;
-  const T = [["home","🏠 Home"],["earn","⭐ Earn"],["ranks","🏆 Ranks"],["cert","🎓 Certificate"]];
+  const T = [["home","🏠 Home"],["earn","⭐ Earn"],["fp","🌍 Footprint"],["ranks","🏆 Ranks"],["cert","🎓 Certificate"]];
   if (["admin","super_admin"].includes(me.role)) T.push(["admin","🛠 Admin"]);
   $("tabs").innerHTML = T.map(x => `<button class="${x[0]==t?"on":""}" onclick="show('${x[0]}')">${x[1]}</button>`).join("") + `<button onclick="db.auth.signOut().then(init)">Out</button>`;
-  ({ home, earn, ranks, cert, admin })[t]();
+  ({ home, earn, fp, ranks, cert, admin })[t]();
 }
 async function home() {
   const { data } = await db.rpc("my_xp_summary"); const s = data && data[0] || { earned: 0, spendable: 0, year_earned: 0 };
   const e = +s.earned, l = [...LV].reverse().find(x => e >= x[0]), n = LV.find(x => x[0] > e), p = n ? Math.round((e - l[0]) / (n[0] - l[0]) * 100) : 100;
   $("app").innerHTML = `<h2>Hi ${esc((me.full_name||"").split(" ")[0])} ${l[2]}</h2><div class="card"><div class="row"><b style="font-size:1.8rem">${e} XP</b><span class="pill">${l[1]}</span></div>
   <div class="bar" style="margin:.6rem 0"><i style="width:${p}%"></i></div><span class="mute">${n ? n[0]-e+" XP to "+n[1] : "Top level"} · ${s.spendable} XP to spend · ${s.year_earned} XP this year</span></div>
-  ${me.survey ? `<div class="card"><div class="row"><span>🌍 Your footprint</span><b>${(me.survey.total_kg / 1000).toFixed(1)} t CO₂e / year</b></div><p><button class="s o" onclick="analysisScreen()">View analysis</button></p></div>` : ""}
+  ${me.survey ? `<div class="card"><div class="row"><span>🌍 Your footprint</span><b>${(me.survey.total_kg / 1000).toFixed(1)} t CO₂e / year</b></div><p class="mute">From your questionnaire. Log your real travel, bills and meals for a more accurate figure.</p><p><button class="s" onclick="show('fp')">Open footprint dashboard</button></p></div>` : ""}
   <p class="mute">GreenXP points are reward points, not carbon credits or money.</p>`;
 }
 async function earn() {
@@ -233,6 +240,210 @@ async function doAct(id) {
     say(r.xp ? `+${r.xp} XP!` : "Sent. XP arrives once an admin verifies it.");
   } catch (e) { say(e.message, 1); }
 }
+// ---- Activity logging and the footprint dashboard ----
+// fields: [id, label, options | "number", default]; event categories are dated once, the others cover a period.
+const LOGS = {
+  transport: { label: "Transport", icon: "🚗", event: true, acts: ["Transport"], hint: "Log each trip, or a day's total distance.", fields: [
+    ["vehicle", "Vehicle", [["car","Car"],["two","Two-wheeler"],["auto","Auto-rickshaw"],["cab","Cab / taxi"],["bus","Bus"],["metro","Metro / local train"],["train","Long-distance train"],["flight","Flight"]]],
+    ["fuel", "Fuel (car, two-wheeler, auto or cab)", [["petrol","Petrol"],["diesel","Diesel"],["cng","CNG"],["electric","Electric"]]],
+    ["km", "Distance travelled (km)", "number"]] },
+  electricity: { label: "Electricity", icon: "⚡", bill: true, acts: ["Energy"], hint: "Use the units (kWh) and dates from your electricity bill.", fields: [
+    ["kwh", "Units used (kWh)", "number"],
+    ["people", "People sharing this bill", "number", 1]] },
+  cooking: { label: "Cooking & heating", icon: "🔥", acts: ["Energy"], hint: "How much fuel your home used over these dates.", fields: [
+    ["fuel", "Fuel", [["lpg","LPG (cylinders)"],["png","Piped gas (SCM)"],["kerosene","Kerosene (litres)"],["wood","Firewood (kg)"],["coal","Coal (kg)"]]],
+    ["qty", "Quantity used", "number"],
+    ["people", "People sharing", "number", 1]] },
+  food: { label: "Food", icon: "🍽", acts: ["Food"], hint: "Add one entry per meal type for the period, e.g. 60 vegetarian and 20 chicken meals.", fields: [
+    ["meal", "Meal type", [["plant","Plant-based (vegan)"],["veg","Vegetarian (with dairy)"],["egg","Egg"],["chicken","Chicken / fish"],["mutton","Mutton / beef"]]],
+    ["meals", "Number of meals", "number"],
+    ["delivered", "How many of these were delivered", "number", 0]] },
+  shopping: { label: "Shopping", icon: "🛍", event: true, acts: ["Reuse", "Recycling"], hint: "Log new things you bought.", fields: [
+    ["item", "Product", [["clothing","Clothing item"],["footwear","Footwear"],["phone","Phone"],["laptop","Laptop / tablet"],["electronics","Small electronics"],["furniture","Furniture"],["books","Books / stationery"],["online","Other online order"]]],
+    ["qty", "How many", "number", 1]] },
+  waste: { label: "Waste", icon: "🗑", acts: ["Waste", "Water"], hint: "Roughly how much waste you produced over these dates (a full kitchen bin bag is about 3–5 kg).", fields: [
+    ["kg", "Waste (kg)", "number"],
+    ["method", "How it was disposed of", [["mixed","Mixed bin (landfill)"],["segregated","Segregated / recycled"],["compost","Composted"],["burned","Burned"]]]] }
+};
+// Emission factors (kg CO2e), typical Indian values. Vehicles are per vehicle-km; public transport and flights per passenger-km.
+const EF = {
+  vehicle: {
+    car:  { petrol: 0.17, diesel: 0.16, cng: 0.11, electric: 0.09 },
+    cab:  { petrol: 0.17, diesel: 0.16, cng: 0.11, electric: 0.09 },
+    two:  { petrol: 0.045, diesel: 0.045, cng: 0.04, electric: 0.02 },
+    auto: { petrol: 0.08, diesel: 0.09, cng: 0.06, electric: 0.03 },
+    bus: 0.03, metro: 0.02, train: 0.01, flight: 0.15 },
+  cooking: { lpg: 42.3, png: 2.0, kerosene: 2.52, wood: 0.25, coal: 2.2 }, // per cylinder (14.2 kg), SCM, litre, kg, kg
+  meal: { plant: 0.4, veg: 0.7, egg: 0.8, chicken: 1.4, mutton: 3.5 }, delivered: 0.3, // per meal; delivery adds packaging and transport
+  item: { clothing: 15, footwear: 14, phone: 60, laptop: 250, electronics: 20, furniture: 60, books: 2, online: 1 },
+  waste: { mixed: 0.6, segregated: 0.15, compost: 0.05, burned: 1.0 } // per kg
+};
+function logKg(cat, d) {
+  const share = Math.max(1, d.people || 1);
+  switch (cat) {
+    case "transport": { const f = EF.vehicle[d.vehicle]; return d.km * (typeof f === "number" ? f : f[d.fuel]); }
+    case "electricity": return d.kwh * GRID / share;
+    case "cooking": return d.qty * EF.cooking[d.fuel] / share;
+    case "food": return d.meals * EF.meal[d.meal] + Math.min(d.delivered, d.meals) * EF.delivered;
+    case "shopping": return d.qty * EF.item[d.item];
+    case "waste": return d.kg * EF.waste[d.method];
+  }
+}
+function logSummary(l) {
+  const d = l.details, o = (cat, id) => (LOGS[cat].fields.find(f => f[0] === id)[2].find(x => x[0] === d[id]) || [, d[id]])[1];
+  switch (l.category) {
+    case "transport": return `${d.km} km · ${o("transport", "vehicle")}`;
+    case "electricity": return `${d.kwh} kWh${d.people > 1 ? ` ÷ ${d.people} people` : ""}`;
+    case "cooking": return `${d.qty} × ${o("cooking", "fuel")}`;
+    case "food": return `${d.meals} ${o("food", "meal").toLowerCase()} meals`;
+    case "shopping": return `${d.qty} × ${o("shopping", "item").toLowerCase()}`;
+    case "waste": return `${d.kg} kg · ${o("waste", "method").toLowerCase()}`;
+  }
+}
+const GROUPS = [
+  ["🚌 Transport", "Travel-related emissions", ["transport"]],
+  ["🏠 Home energy", "Electricity and fuel emissions", ["electricity", "cooking"]],
+  ["🍽 Food and consumption", "Diet, purchases and waste", ["food", "shopping", "waste"]]
+];
+const iso = t => new Date(t).toISOString().slice(0, 10);
+function coveredDays(L) {
+  const r = L.map(l => [Date.parse(l.period_start), Date.parse(l.period_end)]).sort((a, b) => a[0] - b[0]);
+  let days = 0, end = -Infinity;
+  for (const [s, e] of r) {
+    if (e <= end) continue;
+    days += (e - Math.max(s, end + 864e5)) / 864e5 + 1;
+    end = e;
+  }
+  return days;
+}
+// Yearly estimate per category: logged data scaled to a year where there is enough of it, otherwise the questionnaire.
+function estimate(logs, base) {
+  const out = {};
+  for (const [cat, c] of Object.entries(LOGS)) {
+    const L = logs.filter(l => l.category === cat), kg = L.reduce((s, l) => s + +l.kg_co2e, 0);
+    // Dated events are spread from the first entry to today (at least 30 days); periods count the calendar days
+    // they cover, so overlapping entries (e.g. veg and non-veg meals for the same month) aren't counted twice.
+    const days = !L.length ? 0 : c.event
+      ? Math.max(30, (Date.now() - Math.min(...L.map(l => Date.parse(l.period_start)))) / 864e5 + 1)
+      : coveredDays(L);
+    if (L.length && (c.event || days >= 7)) out[cat] = { kg: kg / Math.min(days, 365) * 365, src: `from ${L.length} logged ${L.length > 1 ? "entries" : "entry"}`, logs: L };
+    else if (base[cat] != null) out[cat] = { kg: base[cat], src: L.length ? "questionnaire (log at least a week)" : "questionnaire estimate", logs: L };
+    else out[cat] = { kg: 0, src: "no data yet", logs: L };
+  }
+  return out;
+}
+// A personalised suggestion for one category, with a rough yearly saving where the data allows it.
+function advice(cat, e) {
+  const sumBy = test => e.logs.filter(test).reduce((s, l) => s + +l.kg_co2e, 0), all = sumBy(() => true) || 1, kg = n => Math.round(n);
+  switch (cat) {
+    case "transport": {
+      const priv = sumBy(l => ["car", "cab", "two", "auto"].includes(l.details.vehicle)) / all;
+      return priv > 0.3 && e.logs.length
+        ? `About ${Math.round(priv * 100)}% of your logged travel emissions come from private vehicles. Moving half of those trips to bus or metro would save roughly ${kg(e.kg * priv * 0.5 * 0.8)} kg a year.`
+        : "Walk, cycle or take the bus or metro for some trips, and share rides when you can't.";
+    }
+    case "electricity": return `Cutting electricity use by 15% (fans and lights off when you leave, AC at 24–26 °C, LED bulbs) would save about ${kg(e.kg * 0.15)} kg a year.`;
+    case "cooking": return `Pressure cookers, lids on pans and the right burner size cut cooking fuel by 20–30%, about ${kg(e.kg * 0.25)} kg a year for you.`;
+    case "food": {
+      const meat = sumBy(l => l.details.meal === "mutton") / all, chicken = sumBy(l => l.details.meal === "chicken") / all;
+      if (meat > 0.1) return `Mutton and beef make up ${Math.round(meat * 100)}% of your logged food emissions. Swapping half of those meals for vegetarian ones would save about ${kg(e.kg * meat * 0.5 * 0.8)} kg a year.`;
+      if (chicken > 0.2) return `Swapping half your chicken or fish meals for vegetarian ones would save about ${kg(e.kg * chicken * 0.5 * 0.5)} kg a year.`;
+      return "Take only what you'll eat, try more plant-based meals, and cook or eat at the mess instead of ordering in.";
+    }
+    case "shopping": return "Buy fewer, longer-lasting things: one clothing item fewer each month saves about 180 kg a year. Repair before replacing, and recycle old electronics.";
+    case "waste": {
+      const mixed = sumBy(l => ["mixed", "burned"].includes(l.details.method)) / all;
+      return mixed > 0.3 && e.logs.length
+        ? `Separating wet and dry waste instead of using a mixed bin (or burning it) cuts its emissions by about 75%, saving roughly ${kg(e.kg * mixed * 0.75)} kg a year.`
+        : "Keep segregating waste, compost kitchen scraps if you can, and carry a reusable bottle and bag.";
+    }
+  }
+}
+async function fp() {
+  const { data: logs, error } = await db.from("footprint_logs").select("*").eq("user_id", me.id)
+    .gte("period_end", iso(Date.now() - 364 * 864e5)).order("period_start", { ascending: false });
+  if (error) { $("app").innerHTML = `<h2>Your footprint</h2><p class="err">Could not load your data. Please refresh.</p>`; return; }
+  const est = estimate(logs, me.survey ? baseline(me.survey.answers) : {});
+  const total = Object.values(est).reduce((s, e) => s + e.kg, 0) / 1000;
+  const groupKg = GROUPS.map(g => g[2].reduce((s, c) => s + est[c].kg, 0)), max = Math.max(1, ...groupKg);
+  const month = logs.filter(l => l.period_end >= iso(Date.now() - 29 * 864e5)).reduce((s, l) => s + +l.kg_co2e, 0);
+  const diff = Math.round((total / INDIA_AVG_T - 1) * 100);
+  const top = Object.keys(est).sort((a, b) => est[b].kg - est[a].kg).slice(0, 2);
+  const { data: acts } = await db.from("activities").select("name,category,xp_value").eq("active", true).in("category", top.flatMap(c => LOGS[c].acts));
+  $("app").innerHTML = `<h2>Your estimated carbon footprint</h2>
+  <div class="card"><b style="font-size:1.8rem">${total.toFixed(1)} t CO₂e</b> <span class="mute">per year</span>
+  <p class="mute">${Math.abs(diff) < 10 ? "About the same as" : `${Math.abs(diff)}% ${diff > 0 ? "above" : "below"}`} India's average of ${INDIA_AVG_T} t per person.${logs.length ? ` You logged ${Math.round(month)} kg in the last 30 days.` : ""}</p>
+  <button onclick="logScreen('transport')">+ Log activity</button></div>` +
+  GROUPS.map(([label, desc, cats], i) => `<div class="card"><div class="row"><b>${label}</b><b>${Math.round(groupKg[i])} kg / yr</b></div><span class="mute">${desc}</span>
+    <div class="bar" style="margin:.5rem 0"><i style="width:${Math.round(groupKg[i] / max * 100)}%"></i></div>` +
+    cats.map(c => `<div class="row mute"><span>${LOGS[c].icon} ${LOGS[c].label}</span><span>${Math.round(est[c].kg)} kg · ${est[c].src}</span></div>`).join("") + `</div>`).join("") +
+  `<h3>Recommendations for you</h3>` +
+  top.map(c => `<div class="card"><b>${LOGS[c].icon} ${LOGS[c].label}</b><p>${advice(c, est[c])}</p>` +
+    (acts || []).filter(a => LOGS[c].acts.includes(a.category)).map(a => `<span class="pill" style="display:inline-block;margin:.15rem 0">${esc(a.name)} +${a.xp_value} XP</span>`).join(" ") + `</div>`).join("") +
+  `<h3>Your entries</h3>` +
+  (logs.length ? logs.slice(0, 20).map(l => `<div class="card row"><span>${LOGS[l.category].icon} <b>${esc(logSummary(l))}</b><br><span class="mute">${l.period_start}${l.period_end !== l.period_start ? " to " + l.period_end : ""}</span></span>
+    <span><b>${Math.round(l.kg_co2e)} kg</b> <button class="s o" onclick="deleteLog('${l.id}')" aria-label="Delete entry">✕</button></span></div>`).join("")
+    : `<p class="mute">Nothing logged yet. Your estimate comes from your questionnaire until you log real data.</p>`) +
+  `<p class="mute" style="font-size:.8rem">How this is calculated: each entry is multiplied by a typical Indian emission factor (for example ${GRID} kg CO₂ per kWh of grid electricity, 0.17 kg per km in a petrol car, 42 kg per LPG cylinder). Logged categories are scaled to a full year from the dates you logged; the rest use your questionnaire answers. It is an estimate, not a certified measurement.</p>
+  <p><button class="s o" onclick="analysisScreen()">Questionnaire results</button></p>`;
+}
+let billPath = null;
+function logScreen(cat) {
+  const c = LOGS[cat], today = iso(Date.now());
+  billPath = null;
+  $("app").innerHTML = `<h2>Log activity</h2><div class="card">
+  <label for="lc">Category</label><select id="lc" onchange="logScreen(this.value)">${Object.entries(LOGS).map(([k, v]) => `<option value="${k}"${k === cat ? " selected" : ""}>${v.icon} ${v.label}</option>`).join("")}</select>
+  ${c.bill ? `<label for="bill">Upload your bill (photo or PDF, optional)</label><input id="bill" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onchange="readBill(this.files[0])"><p id="billmsg" class="mute"></p>` : ""}
+  ${c.fields.map(([id, label, opts, def]) => `<label for="f_${id}">${label}</label>` + (Array.isArray(opts)
+    ? `<select id="f_${id}">${opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select>`
+    : `<input id="f_${id}" type="number" min="0" step="any" inputmode="decimal"${def != null ? ` value="${def}"` : ""}>`)).join("")}
+  ${c.event ? `<label for="f_start">Date</label><input id="f_start" type="date" value="${today}" max="${today}">`
+    : `<div class="row"><span style="flex:1"><label for="f_start">From</label><input id="f_start" type="date" value="${iso(Date.now() - 29 * 864e5)}" max="${today}"></span>
+       <span style="flex:1"><label for="f_end">To</label><input id="f_end" type="date" value="${today}" max="${today}"></span></div>`}
+  <p class="mute">${c.hint}</p>
+  <p><button onclick="saveLog('${cat}')">Save</button> <button class="o" onclick="show('fp')">Cancel</button></p><p id="msg"></p></div>`;
+}
+async function readBill(f) {
+  const m = $("billmsg");
+  if (!f) return;
+  if (f.size > 10 * 1024 * 1024) { m.className = "err"; m.textContent = "That file is over 10 MB."; return; }
+  const ext = { "application/pdf": "pdf", "image/png": "png", "image/webp": "webp", "image/jpeg": "jpg" }[f.type];
+  if (!ext) { m.className = "err"; m.textContent = "Please upload a JPG, PNG, WebP or PDF."; return; }
+  m.className = "mute"; m.textContent = "Uploading…";
+  const path = `${me.id}/${crypto.randomUUID()}.${ext}`;
+  const up = await db.storage.from("bills").upload(path, f, { contentType: f.type });
+  if (up.error) { m.className = "err"; m.textContent = up.error.message; return; }
+  billPath = path;
+  m.textContent = "Reading your bill… (this can take a few seconds)";
+  try {
+    const v = await api("/api/bills/extract", { path });
+    if (v.kwh != null) $("f_kwh").value = v.kwh;
+    if (v.period_start) $("f_start").value = v.period_start;
+    if (v.period_end) $("f_end").value = v.period_end;
+    m.textContent = v.kwh != null
+      ? `We filled in the values from your bill${v.amount_inr != null ? ` (amount ₹${v.amount_inr})` : ""}. Please check them and correct anything that's wrong before saving.`
+      : "We couldn't find the units on this bill. Please type them in.";
+  } catch (e) { m.className = "mute"; m.textContent = e.message + " Your bill is still attached."; }
+}
+async function saveLog(cat) {
+  const c = LOGS[cat], d = {};
+  for (const [id, , opts] of c.fields) d[id] = Array.isArray(opts) ? $("f_" + id).value : +$("f_" + id).value;
+  const nums = c.fields.filter(f => !Array.isArray(f[2])).map(f => d[f[0]]);
+  if (nums.some(n => !Number.isFinite(n) || n < 0) || !(nums[0] > 0)) return say("Please enter the amounts (numbers above zero).", 1);
+  const start = $("f_start").value, end = c.event ? start : $("f_end").value;
+  if (!start || !end || end < start) return say("Please check the dates.", 1);
+  if (end > iso(Date.now())) return say("Dates can't be in the future.", 1);
+  const { error } = await db.from("footprint_logs").insert({ user_id: me.id, category: cat, period_start: start, period_end: end,
+    details: d, kg_co2e: Math.round(logKg(cat, d) * 10) / 10, bill_path: billPath });
+  if (error) return say(error.message, 1);
+  show("fp");
+}
+async function deleteLog(id) {
+  if (!confirm("Delete this entry?")) return;
+  const { error } = await db.from("footprint_logs").delete().eq("id", id);
+  error ? alert(error.message) : fp();
+}
+
 async function ranks() {
   const { data } = await db.rpc("get_leaderboard", { p_period: "all", p_limit: 50 });
   $("app").innerHTML = `<h2>Leaderboard</h2>` + ((data||[]).map(r => `<div class="card row"><b>${r.rank}</b><span style="flex:1;margin-left:.6rem">${esc(r.display_name)}<br><span class="mute">${esc(r.department)}</span></span><b>${r.xp} XP</b></div>`).join("") || `<p class="mute">No XP earned yet. Be the first.</p>`);

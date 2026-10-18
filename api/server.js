@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import Anthropic from "@anthropic-ai/sdk";
 
 // Refuse to start without every secret: an empty webhook secret would let anyone forge "payment captured" events.
 const REQUIRED = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_WEBHOOK_SECRET", "FRONTEND_URL"];
@@ -11,6 +12,8 @@ if (missing.length) { console.error("Missing environment variables: " + missing.
 const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET,
   RAZORPAY_WEBHOOK_SECRET, FRONTEND_URL, PORT = 3000 } = process.env;
 const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+// Optional: reading utility bills needs ANTHROPIC_API_KEY. Without it, students type the values themselves.
+const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null;
 const app = express();
 app.use(cors({ origin: FRONTEND_URL }));
 const hmac = (secret, data) => crypto.createHmac("sha256", secret).update(data).digest("hex");
@@ -145,6 +148,53 @@ app.post("/api/admin/certificates/issue", auth, admin, wrap(async (req, res) => 
   const { data, error } = await db.rpc("issue_certificates", { p_admin: req.user.id });
   if (error) return res.status(400).json({ error: error.message });
   res.json({ issued: data });
+}));
+
+// 5. Utility bills: read units and the billing period from an uploaded bill; the student checks and corrects them before saving.
+const num = { anyOf: [{ type: "number" }, { type: "null" }] }, date = { anyOf: [{ type: "string", format: "date" }, { type: "null" }] };
+const BILL_SCHEMA = {
+  type: "object",
+  properties: { kwh: num, period_start: date, period_end: date, amount_inr: num },
+  required: ["kwh", "period_start", "period_end", "amount_inr"],
+  additionalProperties: false,
+};
+const BILL_PROMPT = "This is a household electricity bill, probably from India. Extract: kwh = electricity units consumed in this " +
+  "billing period (not the meter readings themselves, and not the sanctioned load); period_start and period_end = the billing " +
+  "period as YYYY-MM-DD (if only a reading date and the number of days are shown, work out the start date); amount_inr = the " +
+  "total amount payable. Use null for anything that is not on the bill or that you cannot read clearly.";
+const MEDIA = { pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
+const billReads = new Map(); // user id -> { day, n }: a simple cap on paid model calls per student per day
+
+app.post("/api/bills/extract", auth, wrap(async (req, res) => {
+  if (!anthropic) return res.status(501).json({ error: "Automatic bill reading isn't switched on yet. Please type the values from your bill." });
+  const { path } = req.body;
+  if (typeof path !== "string" || !path.startsWith(req.profile.id + "/") || path.includes(".."))
+    return res.status(400).json({ error: "Invalid file" });
+  const today = new Date().toISOString().slice(0, 10), used = billReads.get(req.profile.id);
+  const n = used?.day === today ? used.n : 0;
+  if (n >= 10) return res.status(429).json({ error: "You've reached today's limit for reading bills. Please type the values." });
+  billReads.set(req.profile.id, { day: today, n: n + 1 });
+
+  const { data: file, error } = await db.storage.from("bills").download(path);
+  if (error) return res.status(400).json({ error: "Bill upload not found. Please try again." });
+  const type = MEDIA[path.split(".").pop().toLowerCase()];
+  if (!type) return res.status(400).json({ error: "Upload a JPG, PNG, WebP or PDF bill." });
+  const data = Buffer.from(await file.arrayBuffer()).toString("base64");
+  const media = type === "application/pdf"
+    ? { type: "document", source: { type: "base64", media_type: type, data } }
+    : { type: "image", source: { type: "base64", media_type: type, data } };
+
+  const r = await anthropic.beta.messages.create({
+    model: "claude-opus-5-5",
+    max_tokens: 16000,
+    betas: ["server-side-fallback-2026-07-01"],
+    fallbacks: "default",
+    output_config: { effort: "low", format: { type: "json_schema", schema: BILL_SCHEMA } },
+    messages: [{ role: "user", content: [media, { type: "text", text: BILL_PROMPT }] }],
+  });
+  const text = r.content.find((b) => b.type === "text")?.text;
+  if (r.stop_reason !== "end_turn" || !text) return res.status(422).json({ error: "We couldn't read this bill. Please type the values." });
+  res.json(JSON.parse(text));
 }));
 
 app.listen(PORT, () => console.log("GreenXP API on " + PORT));
