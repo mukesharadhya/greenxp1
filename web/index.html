@@ -47,6 +47,8 @@ async function init() {
     return;
   }
   if (!me.usn || !me.department) return profileScreen();
+  me.survey = (await db.from("lifestyle_surveys").select("*").eq("user_id", me.id).maybeSingle()).data;
+  if (!me.survey) return surveyScreen();
   // Only a membership for the current academic year unlocks the app.
   const y = await currentYear();
   const { data: m } = y ? await db.from("memberships").select("status").eq("user_id", me.id).eq("academic_year_id", y.id).in("status", ["active", "waived"]).limit(1) : { data: null };
@@ -82,6 +84,91 @@ async function saveProfile() {
   const { error } = await db.from("profiles").update({ usn: $("usn").value.trim(), department: $("dep").value, year: +$("yr").value, phone: $("ph").value }).eq("id", me.id);
   error ? say(error.message, 1) : init();
 }
+
+// Baseline lifestyle questionnaire: [section, [[id, question, [[value, label], ...]], ...]]
+const SURVEY = [
+  ["🏠 Home", [
+    ["household", "How many people share your home (or hostel room)?", [["1","Just me"],["2","2"],["4","3–4"],["6","5 or more"]]],
+    ["residence", "Where do you live?", [["hostel","Hostel / PG"],["apartment","Apartment / flat"],["house","Independent house"]]]]],
+  ["🚌 Travel", [
+    ["mode", "How do you usually travel to college?", [["walk","Walk / cycle"],["public","Bus / metro / train"],["two","Two-wheeler"],["auto","Auto / cab"],["car","Car"]]],
+    ["distance", "Typical daily round-trip distance?", [["3","Under 5 km"],["10","5–15 km"],["22","15–30 km"],["40","Over 30 km"]]]]],
+  ["⚡ Energy", [
+    ["units", "Household electricity use per month?", [["75","Under 100 units (bill under ₹500)"],["150","100–200 units (₹500–1,200)"],["300","200–400 units (₹1,200–3,000)"],["500","Over 400 units (over ₹3,000)"],["0","Don't know"]]],
+    ["cooking", "Main cooking fuel where you eat?", [["lpg","LPG cylinder"],["png","Piped gas (PNG)"],["electric","Electric / induction"],["biomass","Wood / biomass"],["mess","I eat at a mess / canteen"]]]]],
+  ["🍽 Food", [
+    ["diet", "Which best describes your diet?", [["vegan","Vegan"],["veg","Vegetarian"],["egg","Vegetarian + eggs"],["nonveg_some","Non-veg a few times a week"],["nonveg_daily","Non-veg daily"]]],
+    ["waste", "How often is food wasted on your plate or at home?", [["rare","Rarely"],["sometimes","Sometimes"],["often","Often"]]],
+    ["delivery", "How often do you order food delivery?", [["rare","Rarely"],["weekly","About once a week"],["often","Several times a week"]]]]],
+  ["🛍 Shopping", [
+    ["clothes", "New clothes bought per year?", [["low","0–5 items"],["mid","6–15 items"],["high","16+ items"]]],
+    ["online", "Online orders per month?", [["low","0–2"],["mid","3–8"],["high","9+"]]],
+    ["devices", "How often do you replace your phone or laptop?", [["low","Every 4+ years"],["mid","Every 2–3 years"],["high","Every year"]]]]],
+  ["💧 Water & waste", [
+    ["bath", "How do you usually bathe?", [["bucket","Bucket"],["short","Shower, under 10 min"],["long","Shower, over 10 min"]]],
+    ["segregate", "Do you separate wet and dry waste?", [["always","Always"],["sometimes","Sometimes"],["never","Never"]]],
+    ["plastic", "How often do you use single-use plastic (bags, bottles, cups)?", [["rare","Rarely"],["sometimes","Sometimes"],["daily","Daily"]]]]]
+];
+// Footprint categories, with the tip and matching activity categories shown when it is one of a student's biggest.
+const CATS = {
+  Energy:    { label: "Energy", icon: "⚡", acts: ["Energy"], tip: "Switch off fans, lights and chargers when you leave a room, keep the AC at 24–26 °C, and pick LED and 5-star appliances." },
+  Transport: { label: "Transport", icon: "🚌", acts: ["Transport"], tip: "Walk, cycle or take the bus or metro for some trips, and share rides when you can't." },
+  Food:      { label: "Food", icon: "🍽", acts: ["Food"], tip: "Take only what you'll eat, try more plant-based meals, and cook or eat at the mess instead of ordering in." },
+  Shopping:  { label: "Shopping", icon: "🛍", acts: ["Reuse", "Recycling"], tip: "Buy fewer, longer-lasting clothes, repair before replacing, and recycle old electronics properly." },
+  Water:     { label: "Water & waste", icon: "💧", acts: ["Water", "Waste"], tip: "Use a bucket or keep showers short, segregate waste, and carry a reusable bottle and bag." }
+};
+const INDIA_AVG_T = 1.9; // approx. per-person tonnes CO2e per year in India
+// Rough yearly kg CO2e per person from the answers, using typical Indian emission factors.
+function footprint(a) {
+  const hh = +a.household;
+  const units = +a.units || { hostel: 40, apartment: 50, house: 70 }[a.residence] * hh; // "don't know": typical per-person use
+  const cook = { lpg: 340, png: 300, electric: 0, biomass: 400 }; // per household per year
+  const f = {
+    Energy: units * 12 * 0.71 / hh + (a.cooking === "mess" ? 100 : cook[a.cooking] / hh), // grid ~0.71 kg/kWh
+    Transport: +a.distance * 300 * { walk: 0, public: 0.03, two: 0.05, auto: 0.12, car: 0.17 }[a.mode], // ~300 travel days
+    Food: { vegan: 700, veg: 900, egg: 1000, nonveg_some: 1200, nonveg_daily: 1600 }[a.diet]
+      + { rare: 0, sometimes: 50, often: 150 }[a.waste] + { rare: 0, weekly: 50, often: 150 }[a.delivery],
+    Shopping: { low: 50, mid: 150, high: 350 }[a.clothes] + { low: 20, mid: 60, high: 150 }[a.online] + { low: 50, mid: 100, high: 250 }[a.devices],
+    Water: { bucket: 20, short: 40, long: 80 }[a.bath] + { always: 30, sometimes: 80, never: 150 }[a.segregate] + { rare: 10, sometimes: 40, daily: 100 }[a.plastic]
+  };
+  for (const k in f) f[k] = Math.round(f[k]);
+  return f;
+}
+function surveyScreen() {
+  const prev = me.survey?.answers || {};
+  $("app").innerHTML = `<h2>Your green baseline</h2><p class="mute">15 quick questions about your everyday life. We use them to estimate your carbon footprint and show where you can make the biggest difference.</p>` +
+    SURVEY.map(([title, qs]) => `<div class="card"><h3>${title}</h3>` + qs.map(([id, q, opts]) =>
+      `<label for="q_${id}">${q}</label><select id="q_${id}"><option value="">Choose…</option>${opts.map(([v, t]) => `<option value="${v}"${prev[id] === v ? " selected" : ""}>${t}</option>`).join("")}</select>`).join("") + `</div>`).join("") +
+    `<p><button onclick="saveSurvey()">See my analysis</button>${me.survey ? ` <button class="o" onclick="init()">Cancel</button>` : ""}</p><p id="msg"></p>`;
+}
+async function saveSurvey() {
+  const a = {};
+  for (const [, qs] of SURVEY) for (const [id] of qs) a[id] = $("q_" + id).value;
+  if (Object.values(a).some(v => !v)) return say("Please answer every question.", 1);
+  const f = footprint(a), total = Object.values(f).reduce((x, y) => x + y, 0);
+  const { data, error } = await db.from("lifestyle_surveys")
+    .upsert({ user_id: me.id, answers: a, footprint: f, total_kg: total, updated_at: new Date().toISOString() }).select().single();
+  if (error) return say(error.message, 1);
+  me.survey = data;
+  analysisScreen();
+}
+async function analysisScreen() {
+  const f = me.survey.footprint, t = me.survey.total_kg / 1000;
+  const max = Math.max(1, ...Object.keys(CATS).map(k => f[k]));
+  const top = Object.keys(CATS).sort((x, y) => f[y] - f[x]).slice(0, 2);
+  const { data: acts } = await db.from("activities").select("name,category,xp_value").eq("active", true).in("category", top.flatMap(k => CATS[k].acts));
+  const diff = Math.round((t / INDIA_AVG_T - 1) * 100);
+  const cmp = Math.abs(diff) < 10 ? `About the same as India's average of ${INDIA_AVG_T} t per person.`
+    : `${Math.abs(diff)}% ${diff > 0 ? "above" : "below"} India's average of ${INDIA_AVG_T} t per person.`;
+  $("app").innerHTML = `<h2>Your footprint</h2><div class="card"><b style="font-size:1.8rem">${t.toFixed(1)} t CO₂e</b> <span class="mute">per year (estimate)</span><p class="mute">${cmp}</p>` +
+    Object.entries(CATS).map(([k, c]) => `<div class="row"><span>${c.icon} ${c.label}</span><b>${f[k]} kg</b></div><div class="bar" style="margin:.2rem 0 .7rem"><i style="width:${Math.round(f[k] / max * 100)}%"></i></div>`).join("") + `</div>
+    <h3>Where you can make the biggest difference</h3>` +
+    top.map(k => `<div class="card"><b>${CATS[k].icon} ${CATS[k].label}</b><p>${CATS[k].tip}</p>` +
+      (acts || []).filter(a => CATS[k].acts.includes(a.category)).map(a => `<span class="pill" style="display:inline-block;margin:.15rem 0">${esc(a.name)} +${a.xp_value} XP</span>`).join(" ") + `</div>`).join("") +
+    `<p class="mute" style="font-size:.8rem">A rough estimate from typical Indian emission factors, to show where your biggest impact is. It is not a certified measurement.</p>
+    <p><button onclick="init()">Continue</button> <button class="o" onclick="surveyScreen()">Retake questionnaire</button></p>`;
+}
+
 async function payScreen(y) {
   const { data: f } = y ? await db.from("fee_settings").select("amount,currency").eq("college_id", me.college_id).eq("academic_year_id", y.id).eq("active", true).maybeSingle() : { data: null };
   $("app").innerHTML = `<h2>Activate your year</h2><div class="card"><h1>₹${f ? f.amount : "-"}</h1><p class="mute">Includes XP tracking, badges, challenges, leaderboards and your annual certificate.</p>
@@ -111,6 +198,7 @@ async function home() {
   const e = +s.earned, l = [...LV].reverse().find(x => e >= x[0]), n = LV.find(x => x[0] > e), p = n ? Math.round((e - l[0]) / (n[0] - l[0]) * 100) : 100;
   $("app").innerHTML = `<h2>Hi ${esc((me.full_name||"").split(" ")[0])} ${l[2]}</h2><div class="card"><div class="row"><b style="font-size:1.8rem">${e} XP</b><span class="pill">${l[1]}</span></div>
   <div class="bar" style="margin:.6rem 0"><i style="width:${p}%"></i></div><span class="mute">${n ? n[0]-e+" XP to "+n[1] : "Top level"} · ${s.spendable} XP to spend · ${s.year_earned} XP this year</span></div>
+  ${me.survey ? `<div class="card"><div class="row"><span>🌍 Your footprint</span><b>${(me.survey.total_kg / 1000).toFixed(1)} t CO₂e / year</b></div><p><button class="s o" onclick="analysisScreen()">View analysis</button></p></div>` : ""}
   <p class="mute">GreenXP points are reward points, not carbon credits or money.</p>`;
 }
 async function earn() {
@@ -160,7 +248,12 @@ async function verifyCert() {
   $("vr").innerHTML = r ? `<b>${esc(r.status).toUpperCase()}</b>: ${esc(r.student_name)}, ${esc(r.tier)}, ${esc(r.academic_year)}, ${esc(r.college)}` : "Not found";
 }
 async function admin() {
-  $("app").innerHTML = `<h2>Verification queue</h2><p id="msg" class="mute">Loading…</p><div id="q"></div><p><button class="o" onclick="issueAll()">Issue year-end certificates</button></p>`;
+  $("app").innerHTML = `<div id="ls"></div><h2>Verification queue</h2><p id="msg" class="mute">Loading…</p><div id="q"></div><p><button class="o" onclick="issueAll()">Issue year-end certificates</button></p>`;
+  db.rpc("lifestyle_summary").then(({ data: s }) => {
+    if (!s || !s.responses) return;
+    $("ls").innerHTML = `<h2>Student lifestyle baseline</h2><div class="card"><div class="row"><span>${s.responses} students answered</span><b>avg ${(s.avg_total_kg / 1000).toFixed(1)} t CO₂e / year</b></div>` +
+      Object.entries(CATS).map(([k, c]) => `<div class="row mute"><span>${c.icon} ${c.label}</span><span>${s.avg[k]} kg</span></div>`).join("") + `</div>`;
+  });
   try {
     const q = await api("/api/admin/submissions", null, "GET");
     say(q.length ? "" : "Nothing waiting.");
