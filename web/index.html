@@ -25,23 +25,32 @@ const db = supabase.createClient(GXP.SUPABASE_URL, GXP.SUPABASE_KEY);
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
 const LV = [[0,"Eco Starter","🌱"],[100,"Green Rookie","🍃"],[300,"Green Warrior","🌿"],[600,"Eco Champion","🌳"],[1000,"Planet Hero","🌎"],[2000,"Eco Legend","🏆"]];
-let me = null, tab = "home";
+let me = null, tab = "home", acts = {};
 async function api(path, body, method = "POST") {
   const { data: { session } } = await db.auth.getSession();
+  if (!session) throw new Error("Your session has expired. Please log in again.");
   const r = await fetch(GXP.API_URL + path, { method, headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token }, body: body ? JSON.stringify(body) : undefined });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || "Request failed");
   return j;
 }
 const say = (m, bad) => { const e = $("msg"); if (e) { e.textContent = m; e.className = bad ? "err" : "mute"; } };
+const currentYear = async () => (await db.from("academic_years").select("id").eq("college_id", me.college_id).eq("is_current", true).maybeSingle()).data;
 
 async function init() {
   const { data: { session } } = await db.auth.getSession();
   if (!session) return authScreen();
-  me = (await db.from("profiles").select("*").eq("id", session.user.id).single()).data;
+  me = (await db.from("profiles").select("*").eq("id", session.user.id).maybeSingle()).data;
+  if (!me) {
+    $("tabs").hidden = true;
+    $("app").innerHTML = `<div class="card"><p>Your account is still being set up.</p><button onclick="init()">Try again</button> <button class="o" onclick="db.auth.signOut().then(init)">Log out</button></div>`;
+    return;
+  }
   if (!me.usn || !me.department) return profileScreen();
-  const { data: m } = await db.from("memberships").select("status").eq("user_id", me.id).in("status", ["active", "waived"]).limit(1);
-  if (!m || !m.length) return payScreen();
+  // Only a membership for the current academic year unlocks the app.
+  const y = await currentYear();
+  const { data: m } = y ? await db.from("memberships").select("status").eq("user_id", me.id).eq("academic_year_id", y.id).in("status", ["active", "waived"]).limit(1) : { data: null };
+  if (!m || !m.length) return payScreen(y);
   $("tabs").hidden = false; show("home");
 }
 async function authScreen() {
@@ -73,8 +82,8 @@ async function saveProfile() {
   const { error } = await db.from("profiles").update({ usn: $("usn").value.trim(), department: $("dep").value, year: +$("yr").value, phone: $("ph").value }).eq("id", me.id);
   error ? say(error.message, 1) : init();
 }
-async function payScreen() {
-  const { data: f } = await db.from("fee_settings").select("amount,currency").eq("college_id", me.college_id).eq("active", true).limit(1).single();
+async function payScreen(y) {
+  const { data: f } = y ? await db.from("fee_settings").select("amount,currency").eq("college_id", me.college_id).eq("academic_year_id", y.id).eq("active", true).maybeSingle() : { data: null };
   $("app").innerHTML = `<h2>Activate your year</h2><div class="card"><h1>₹${f ? f.amount : "-"}</h1><p class="mute">Includes XP tracking, badges, challenges, leaderboards and your annual certificate.</p>
   <button onclick="pay()">Pay now</button><p id="msg"></p></div>`;
 }
@@ -101,19 +110,25 @@ async function home() {
 }
 async function earn() {
   const { data } = await db.from("activities").select("*").eq("active", true).order("category");
+  acts = Object.fromEntries((data||[]).map(a => [a.id, a]));
   $("app").innerHTML = `<h2>Earn XP</h2><p id="msg" class="mute"></p>` + (data||[]).map(a => `<div class="card row"><div><b>${esc(a.name)}</b><br><span class="mute">${esc(a.category)} · ${a.frequency_limit} per ${a.frequency_period} · ${({self:"instant",photo:"photo",photo_admin:"photo + admin",qr_event:"event code",automatic:"automatic"})[a.verification_type]}</span></div>
-  ${a.verification_type==="automatic" ? '<span class="mute">Auto</span>' : `<span><span class="pill">+${a.xp_value}</span> <button class="s" onclick='doAct(${JSON.stringify(a)})'>Go</button></span>`}</div>`).join("");
+  ${a.verification_type==="automatic" ? '<span class="mute">Auto</span>' : `<span><span class="pill">+${a.xp_value}</span> <button class="s" onclick="doAct('${esc(a.id)}')">Go</button></span>`}</div>`).join("");
 }
-async function doAct(a) {
+async function doAct(id) {
+  const a = acts[id];
+  if (!a) return;
   try {
     const body = { activityId: a.id };
-    if (a.verification_type === "qr_event") body.eventCode = prompt("Enter the event code");
+    if (a.verification_type === "qr_event") {
+      body.eventCode = prompt("Enter the event code");
+      if (body.eventCode == null) return;
+    }
     if (["photo", "photo_admin"].includes(a.verification_type)) {
-      const f = await new Promise(r => { const i = document.createElement("input"); i.type = "file"; i.accept = "image/*"; i.capture = "environment"; i.onchange = () => r(i.files[0]); i.click(); });
+      const f = await new Promise(r => { const i = document.createElement("input"); i.type = "file"; i.accept = "image/*"; i.capture = "environment"; i.onchange = () => r(i.files[0]); i.oncancel = () => r(null); i.click(); });
       if (!f) return;
-      const buf = await f.arrayBuffer();
-      body.proofHash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", buf))].map(b => b.toString(16).padStart(2, "0")).join("");
-      body.proofPath = `${me.id}/${crypto.randomUUID()}.jpg`;
+      if (f.size > 10 * 1024 * 1024) return say("That photo is over 10 MB. Please pick a smaller one.", 1);
+      const ext = ({ "image/png": "png", "image/webp": "webp", "image/heic": "heic", "image/heif": "heif" })[f.type] || "jpg";
+      body.proofPath = `${me.id}/${crypto.randomUUID()}.${ext}`;
       const up = await db.storage.from("proofs").upload(body.proofPath, f, { contentType: f.type });
       if (up.error) throw up.error;
     }
@@ -141,11 +156,15 @@ async function admin() {
     const q = await api("/api/admin/submissions", null, "GET");
     say(q.length ? "" : "Nothing waiting.");
     $("q").innerHTML = q.map(s => `<div class="card"><b>${esc(s.activities.name)}</b> <span class="pill">+${s.activities.xp_value}</span><br><span class="mute">${esc(s.profiles.full_name)} · ${esc(s.profiles.usn)}</span>
-    ${s.proof_url ? `<br><img src="${s.proof_url}" alt="Proof" style="max-width:100%;max-height:180px;border-radius:10px;margin:.4rem 0">` : ""}<br>
+    ${s.proof_url ? `<br><img src="${esc(s.proof_url)}" alt="Proof" style="max-width:100%;max-height:180px;border-radius:10px;margin:.4rem 0">` : ""}<br>
     <button class="s" onclick="review('${s.id}',true)">Approve</button> <button class="s o" onclick="review('${s.id}',false)">Reject</button></div>`).join("");
   } catch (e) { say(e.message, 1); }
 }
-async function review(id, approve) { try { await api(`/api/admin/submissions/${id}/review`, { approve, reason: approve ? null : prompt("Reason for rejection") }); admin(); } catch (e) { say(e.message, 1); } }
+async function review(id, approve) {
+  const reason = approve ? null : prompt("Reason for rejection");
+  if (!approve && reason == null) return; // Cancel means "don't reject"
+  try { await api(`/api/admin/submissions/${id}/review`, { approve, reason }); admin(); } catch (e) { say(e.message, 1); }
+}
 async function issueAll() { try { const r = await api("/api/admin/certificates/issue"); say(`${r.issued} certificate(s) issued.`); } catch (e) { say(e.message, 1); } }
 init();
 </script></body></html>
