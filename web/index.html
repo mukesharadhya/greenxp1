@@ -61,6 +61,8 @@ async function init() {
     $("app").innerHTML = `<div class="card"><p>Your account is still being set up.</p><button onclick="init()">Try again</button> <button class="o" onclick="db.auth.signOut().then(init)">Log out</button></div>`;
     return;
   }
+  // Admins manage the college and go straight to their dashboard; the onboarding steps below are for students.
+  if (["admin", "super_admin"].includes(me.role)) { $("tabs").hidden = false; return show("admin"); }
   if (!me.usn || !me.department) return profileScreen();
   me.survey = (await db.from("lifestyle_surveys").select("*").eq("user_id", me.id).maybeSingle()).data;
   if (!me.survey) return surveyScreen();
@@ -210,8 +212,8 @@ async function pay() {
 }
 function show(t) {
   tab = t;
-  const T = [["home","🏠 Home"],["earn","⭐ Earn"],["fp","🌍 Footprint"],["ranks","🏆 Ranks"],["cert","🎓 Certificate"]];
-  if (["admin","super_admin"].includes(me.role)) T.push(["admin","🛠 Admin"]);
+  const T = ["admin","super_admin"].includes(me.role) ? [["admin","🛠 Admin"],["ranks","🏆 Ranks"]]
+    : [["home","🏠 Home"],["earn","⭐ Earn"],["fp","🌍 Footprint"],["ranks","🏆 Ranks"],["cert","🎓 Certificate"]];
   $("tabs").innerHTML = T.map(x => `<button class="${x[0]==t?"on":""}" onclick="show('${x[0]}')">${x[1]}</button>`).join("") + `<button onclick="db.auth.signOut().then(init)">Out</button>`;
   $("app").classList.toggle("wide", t === "admin");
   ({ home, earn, fp, ranks, cert, admin })[t]();
