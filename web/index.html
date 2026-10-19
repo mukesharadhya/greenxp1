@@ -24,6 +24,16 @@ input,select{width:100%;font:inherit;padding:.65rem;border-radius:12px;border:2p
 .lb{position:fixed;inset:0;background:rgba(0,0,0,.85);display:grid;place-items:center;z-index:9;cursor:zoom-out}.lb img{max-width:95vw;max-height:90vh;border-radius:10px}
 dialog{background:var(--card);color:var(--ink);border:2px solid var(--line);border-radius:16px;width:min(420px,92vw)}dialog::backdrop{background:rgba(0,0,0,.5)}
 textarea{width:100%;font:inherit;padding:.65rem;border-radius:12px;border:2px solid var(--line);background:var(--card);color:var(--ink);margin:.2rem 0 .6rem}
+.tbl{overflow-x:auto;border:2px solid var(--line);border-radius:12px}
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+th,td{padding:.55rem .6rem;text-align:left;vertical-align:middle;border-bottom:1px solid var(--line);white-space:nowrap}
+th{position:sticky;top:0;background:var(--card);color:var(--mute);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em}
+td:nth-child(2){white-space:normal;min-width:200px}
+tbody tr:nth-child(even):not(.editrow){background:color-mix(in srgb,var(--line) 35%,transparent)}
+tbody tr:hover:not(.editrow){background:var(--line)}
+th.n,td.n{text-align:right;font-variant-numeric:tabular-nums}
+td.acts button{margin:.1rem 0}
+button.danger{color:#b3261e;border-color:#b3261e}
 .err{color:#b3261e;font-weight:700}.bar{height:12px;background:var(--line);border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pri)}
 </style></head>
 <body><div class="app" id="app">Loading…</div><nav class="tabs" id="tabs" hidden></nav>
@@ -715,28 +725,37 @@ async function institutionsView() {
     <label for="in_fee">Yearly membership fee (₹)</label><input id="in_fee" type="number" min="0" step="1" value="199">
     <p class="mute">The new institution gets this year's academic calendar, all current activities and the certificate rules, copied from yours. Students can choose it when they sign up straight away.</p>
     <button onclick="addInstitution()">Add institution</button><p id="imsg"></p></div>
-  <div class="card"><h3>🏫 Institutions</h3><p id="msg" class="mute">Loading…</p><div id="q"></div></div><datalist id="citylist"></datalist>`;
+  <div class="card"><div class="row" style="flex-wrap:wrap"><h3>🏫 Institutions</h3>
+    <input id="isearch" type="search" placeholder="Search name, city, state or pincode" style="max-width:320px;margin:0" oninput="renderInstTable()" aria-label="Search institutions"></div>
+    <p id="msg" class="mute">Loading…</p><div id="q"></div></div><datalist id="citylist"></datalist>`;
   loadStats();
   try {
     instList = await api("/api/super/institutions", null, "GET");
-    say(`${instList.length} institution${instList.length === 1 ? "" : "s"}`);
     $("citylist").innerHTML = [...new Set(instList.map(c => c.city).filter(Boolean))].sort().map(c => `<option value="${esc(c)}">`).join("");
-    $("q").innerHTML = `<div class="grid">${instList.map(c => `<div class="card" id="ic_${c.id}">${instCard(c)}</div>`).join("")}</div>`;
+    renderInstTable();
   } catch (e) { say(e.message, 1); }
 }
-function instCard(c) {
+// Institutions as a table: one row each, actions on the right; Edit opens a form row underneath.
+function renderInstTable() {
+  const q = ($("isearch").value || "").trim().toLowerCase();
+  const rows = instList.filter(c => !q || [c.name, c.city, c.state, c.pincode].some(v => (v || "").toLowerCase().includes(q)));
+  say(`${rows.length} of ${instList.length} institution${instList.length === 1 ? "" : "s"}`);
+  $("q").innerHTML = rows.length ? `<div class="tbl"><table>
+    <thead><tr><th>#</th><th>Institution</th><th>City</th><th>State</th><th>Pincode</th><th class="n">Students</th><th class="n">Waiting</th><th>Admins</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody>${rows.map((c, i) => instRow(c, i + 1)).join("")}</tbody></table></div>` : `<p class="mute">No institutions match “${esc(q)}”.</p>`;
+}
+function instRow(c, n) {
   const own = c.id === me.college_id;
-  return `<div class="row"><b>${esc(c.name)}</b><span class="pill"${c.active ? "" : ` style="background:var(--line);color:var(--mute)"`}>${c.active ? "Active" : "Switched off"}</span></div>
-  <span class="mute">${esc([c.city, c.state].filter(Boolean).join(", ") || "Location not set")}${c.pincode ? " – " + esc(c.pincode) : ""}${own ? " · your institution" : ""}</span>
-  ${c.pincode ? "" : `<div class="warn">No pincode yet: students filtering by pincode won't find it. Use Edit to add it.</div>`}
-  <div class="row mute" style="margin-top:.5rem"><span>Students</span><b>${c.students}${c.waiting ? ` (${c.waiting} waiting)` : ""}</b></div>
-  <div class="row mute"><span>Admins</span><span style="text-align:right">${c.admins.length ? c.admins.map(esc).join("<br>") : "None yet"}</span></div>
-  <label for="ad_${c.id}" style="display:block;margin-top:.6rem">Make someone its admin</label>
-  <input id="ad_${c.id}" type="email" placeholder="Email they signed up with">
-  <p class="row" style="justify-content:flex-start;flex-wrap:wrap"><button class="s" onclick="makeAdmin('${c.id}')">Make admin</button>
-  <button class="s o" onclick="editInst('${c.id}')">Edit</button>
-  ${own ? "" : `<button class="s o" onclick="setActive('${c.id}',${!c.active})">${c.active ? "Switch off" : "Switch on"}</button>
-    <button class="s o" style="color:#b3261e;border-color:#b3261e" onclick="deleteInst('${c.id}')"${c.students ? ` title="Has students: switch it off instead"` : ""}>Delete</button>`}</p>`;
+  return `<tr id="ir_${c.id}"><td class="mute">${n}</td>
+  <td><b>${esc(c.name)}</b>${own ? `<br><span class="mute" style="font-size:.8rem">your institution</span>` : ""}</td>
+  <td>${esc(c.city || "—")}</td><td>${esc(c.state || "—")}</td>
+  <td>${c.pincode ? esc(c.pincode) : `<span class="warn" style="padding:.1rem .4rem">missing</span>`}</td>
+  <td class="n">${c.students}</td><td class="n">${c.waiting || "—"}</td>
+  <td style="font-size:.85rem">${c.admins.length ? c.admins.map(esc).join("<br>") : `<span class="mute">None</span>`}</td>
+  <td><span class="pill"${c.active ? "" : ` style="background:var(--line);color:var(--mute)"`}>${c.active ? "Active" : "Off"}</span></td>
+  <td class="acts"><button class="s o" onclick="editInst('${c.id}')">Edit</button> <button class="s o" onclick="makeAdmin('${c.id}')">+ Admin</button>
+    ${own ? "" : `<button class="s o" onclick="setActive('${c.id}',${!c.active})">${c.active ? "Switch off" : "Switch on"}</button>
+    <button class="s o danger" onclick="deleteInst('${c.id}')"${c.students ? ` title="Has students: switch it off instead"` : ""}>Delete</button>`}</td></tr>`;
 }
 async function deleteInst(id) {
   const c = instList.find(x => x.id === id);
@@ -749,8 +768,9 @@ async function deleteInst(id) {
 }
 function editInst(id) {
   const c = instList.find(x => x.id === id), p = "e_" + id.slice(0, 8) + "_";
-  $("ic_" + id).innerHTML = `<h3>Edit institution</h3>${instFields(p, c)}
-    <p><button class="s" onclick="saveInst('${id}','${p}')">Save</button> <button class="s o" onclick="$('ic_${id}').innerHTML=instCard(instList.find(x=>x.id==='${id}'))">Cancel</button></p><p id="${p}msg"></p>`;
+  document.querySelectorAll("tr.editrow").forEach(r => r.remove());
+  $("ir_" + id).insertAdjacentHTML("afterend", `<tr class="editrow"><td colspan="10"><div style="max-width:520px"><b>Edit ${esc(c.name)}</b>${instFields(p, c)}
+    <p><button class="s" onclick="saveInst('${id}','${p}')">Save</button> <button class="s o" onclick="this.closest('tr').remove()">Cancel</button></p><p id="${p}msg"></p></div></td></tr>`);
 }
 async function saveInst(id, p) {
   const v = readInst(p), m = $(p + "msg");
@@ -769,9 +789,9 @@ async function addInstitution() {
   } catch (e) { m.className = "err"; m.textContent = e.message; }
 }
 async function makeAdmin(id) {
-  const email = $("ad_" + id).value.trim();
+  const c = instList.find(x => x.id === id);
+  const email = (prompt(`Make someone an admin of ${c.name}.\nThey'll be able to approve its students and activities.\n\nEmail they signed up with:`) || "").trim();
   if (!email) return;
-  if (!confirm(`Make ${email} an admin of this institution? They will be able to approve its students and activities.`)) return;
   try { await api(`/api/super/institutions/${id}/admin`, { email }); await institutionsView(); say(`✅ ${email} is now an admin.`); }
   catch (e) { say(e.message, 1); }
 }
