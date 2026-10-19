@@ -75,18 +75,38 @@ async function init() {
 }
 async function authScreen() {
   $("tabs").hidden = true;
-  const { data: cs } = await db.from("colleges").select("id,name,city").eq("active", true).order("name");
+  insts = (await db.from("colleges").select("id,name,city,state,pincode").eq("active", true).order("name")).data || [];
   $("app").innerHTML = `<h1>🌱 GreenXP</h1><p class="mute">Earn XP. Go Green. Make an Impact.</p><div class="stats" id="counters"></div><div class="card">
   <div class="row" style="justify-content:flex-start;margin-bottom:.8rem"><button id="m_login" onclick="authMode('login')">Log in</button><button id="m_signup" class="o" onclick="authMode('signup')">Sign up</button></div>
   <div id="su" hidden>
-    <label for="col">Institution</label><select id="col"><option value="">Select your institution…</option>${(cs || []).map(c =>
-      `<option value="${c.id}">${esc(c.name)}${c.city ? " — " + esc(c.city) : ""}</option>`).join("")}</select>
+    <p class="mute">Find your institution by state, city and pincode.</p>
+    <label for="f_st">State</label><select id="f_st" onchange="pickInst(1)"></select>
+    <div class="row"><span style="flex:1"><label for="f_ci">City</label><select id="f_ci" onchange="pickInst(2)"></select></span>
+      <span style="flex:1"><label for="f_pin">Pincode</label><select id="f_pin" onchange="pickInst(3)"></select></span></div>
+    <label for="col">Institution</label><select id="col"></select>
     <label for="nm">Full name</label><input id="nm" autocomplete="name"></div>
   <label for="em">Email</label><input id="em" type="email" autocomplete="email">
   <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password">
   <p><button id="go" onclick="login()">Log in</button></p><p id="msg"></p>
   <p id="su_note" class="mute" hidden>Can't find your institution? Ask your college to contact the GreenXP team.</p></div>`;
+  pickInst(0);
   showCounters();
+}
+// Linked sign-up dropdowns: each choice narrows the next (state → city → pincode → institution).
+let insts = [];
+function pickInst(changed) {
+  const keep = (id, level) => level <= changed ? $(id).value : ""; // keep the changed field and those above it
+  const st = keep("f_st", 1), ci = keep("f_ci", 2), pin = keep("f_pin", 3);
+  const inSt = insts.filter(c => !st || c.state === st), inCi = inSt.filter(c => !ci || c.city === ci), inPin = inCi.filter(c => !pin || c.pincode === pin);
+  const uniq = (list, k) => [...new Set(list.map(c => c[k]).filter(Boolean))].sort();
+  const fill = (id, all, values, cur, label = v => v) =>
+    $(id).innerHTML = `<option value="">${all}</option>` + values.map(v => `<option value="${esc(v)}"${v === cur ? " selected" : ""}>${esc(label(v))}</option>`).join("");
+  fill("f_st", "All states", uniq(insts, "state"), st);
+  fill("f_ci", "All cities", uniq(inSt, "city"), ci);
+  fill("f_pin", "All pincodes", uniq(inCi, "pincode"), pin);
+  $("col").innerHTML = `<option value="">${inPin.length ? `Select your institution (${inPin.length})…` : "No institutions match"}</option>` +
+    inPin.map(c => `<option value="${c.id}">${esc(c.name)} — ${esc([c.city, c.pincode].filter(Boolean).join(" "))}</option>`).join("");
+  if (inPin.length === 1) $("col").value = inPin[0].id;
 }
 function authMode(m) {
   const up = m === "signup";
@@ -671,40 +691,71 @@ async function reviewMany(approve, ids = [...adminSel]) {
     else say(S.doneMsg(r.done, approve));
   } catch (e) { say(e.message, 1); }
 }
+const INDIAN_STATES = ["Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chandigarh", "Chhattisgarh",
+  "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir", "Jharkhand",
+  "Karnataka", "Kerala", "Ladakh", "Lakshadweep", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha",
+  "Puducherry", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"];
+let instList = [];
+// Name, state, city and pincode fields, shared by the add form and the edit form (prefix keeps their ids apart).
+const instFields = (p, c = {}) => `
+  <label for="${p}name">Institution name</label><input id="${p}name" value="${esc(c.name)}" placeholder="e.g. RV College of Engineering">
+  <label for="${p}state">State</label><select id="${p}state"><option value="">Select state…</option>${INDIAN_STATES.map(s => `<option${s === c.state ? " selected" : ""}>${s}</option>`).join("")}</select>
+  <div class="row"><span style="flex:1"><label for="${p}city">City</label><input id="${p}city" list="citylist" value="${esc(c.city)}"></span>
+    <span style="flex:1"><label for="${p}pin">Pincode</label><input id="${p}pin" inputmode="numeric" maxlength="6" value="${esc(c.pincode)}" placeholder="6 digits"></span></div>`;
+function readInst(p) {
+  const v = { name: $(p + "name").value.trim(), state: $(p + "state").value, city: $(p + "city").value.trim(), pincode: $(p + "pin").value.trim() };
+  if (!v.name) return "Enter the institution's name.";
+  if (!v.state) return "Select the state.";
+  if (!v.city) return "Enter the city.";
+  if (!/^[1-9][0-9]{5}$/.test(v.pincode)) return "Enter a valid 6-digit pincode.";
+  return v;
+}
 async function institutionsView() {
-  $("app").innerHTML = adminHeader() + `<div class="card"><h3>➕ Add an institution</h3>
-    <label for="in_name">Institution name</label><input id="in_name" placeholder="e.g. RV College of Engineering">
-    <div class="row"><span style="flex:1"><label for="in_city">City</label><input id="in_city"></span><span style="flex:1"><label for="in_state">State</label><input id="in_state"></span></div>
+  $("app").innerHTML = adminHeader() + `<div class="card"><h3>➕ Add an institution</h3>${instFields("in_")}
     <label for="in_fee">Yearly membership fee (₹)</label><input id="in_fee" type="number" min="0" step="1" value="199">
     <p class="mute">The new institution gets this year's academic calendar, all current activities and the certificate rules, copied from yours. Students can choose it when they sign up straight away.</p>
     <button onclick="addInstitution()">Add institution</button><p id="imsg"></p></div>
-  <div class="card"><h3>🏫 Institutions</h3><p id="msg" class="mute">Loading…</p><div id="q"></div></div>`;
+  <div class="card"><h3>🏫 Institutions</h3><p id="msg" class="mute">Loading…</p><div id="q"></div></div><datalist id="citylist"></datalist>`;
   loadStats();
   try {
-    const list = await api("/api/super/institutions", null, "GET");
-    say(`${list.length} institution${list.length === 1 ? "" : "s"}`);
-    $("q").innerHTML = `<div class="grid">${list.map(instCard).join("")}</div>`;
+    instList = await api("/api/super/institutions", null, "GET");
+    say(`${instList.length} institution${instList.length === 1 ? "" : "s"}`);
+    $("citylist").innerHTML = [...new Set(instList.map(c => c.city).filter(Boolean))].sort().map(c => `<option value="${esc(c)}">`).join("");
+    $("q").innerHTML = `<div class="grid">${instList.map(c => `<div class="card" id="ic_${c.id}">${instCard(c)}</div>`).join("")}</div>`;
   } catch (e) { say(e.message, 1); }
 }
 function instCard(c) {
   const own = c.id === me.college_id;
-  return `<div class="card"><div class="row"><b>${esc(c.name)}</b><span class="pill"${c.active ? "" : ` style="background:var(--line);color:var(--mute)"`}>${c.active ? "Active" : "Switched off"}</span></div>
-  <span class="mute">${esc([c.city, c.state].filter(Boolean).join(", ") || "Location not set")}${own ? " · your institution" : ""}</span>
+  return `<div class="row"><b>${esc(c.name)}</b><span class="pill"${c.active ? "" : ` style="background:var(--line);color:var(--mute)"`}>${c.active ? "Active" : "Switched off"}</span></div>
+  <span class="mute">${esc([c.city, c.state].filter(Boolean).join(", ") || "Location not set")}${c.pincode ? " – " + esc(c.pincode) : ""}${own ? " · your institution" : ""}</span>
+  ${c.pincode ? "" : `<div class="warn">No pincode yet: students filtering by pincode won't find it. Use Edit to add it.</div>`}
   <div class="row mute" style="margin-top:.5rem"><span>Students</span><b>${c.students}${c.waiting ? ` (${c.waiting} waiting)` : ""}</b></div>
   <div class="row mute"><span>Admins</span><span style="text-align:right">${c.admins.length ? c.admins.map(esc).join("<br>") : "None yet"}</span></div>
   <label for="ad_${c.id}" style="display:block;margin-top:.6rem">Make someone its admin</label>
   <input id="ad_${c.id}" type="email" placeholder="Email they signed up with">
   <p class="row" style="justify-content:flex-start;flex-wrap:wrap"><button class="s" onclick="makeAdmin('${c.id}')">Make admin</button>
-  ${own ? "" : `<button class="s o" onclick="setActive('${c.id}',${!c.active})">${c.active ? "Switch off" : "Switch on"}</button>`}</p></div>`;
+  <button class="s o" onclick="editInst('${c.id}')">Edit</button>
+  ${own ? "" : `<button class="s o" onclick="setActive('${c.id}',${!c.active})">${c.active ? "Switch off" : "Switch on"}</button>`}</p>`;
+}
+function editInst(id) {
+  const c = instList.find(x => x.id === id), p = "e_" + id.slice(0, 8) + "_";
+  $("ic_" + id).innerHTML = `<h3>Edit institution</h3>${instFields(p, c)}
+    <p><button class="s" onclick="saveInst('${id}','${p}')">Save</button> <button class="s o" onclick="$('ic_${id}').innerHTML=instCard(instList.find(x=>x.id==='${id}'))">Cancel</button></p><p id="${p}msg"></p>`;
+}
+async function saveInst(id, p) {
+  const v = readInst(p), m = $(p + "msg");
+  if (typeof v === "string") { m.className = "err"; m.textContent = v; return; }
+  try { await api(`/api/super/institutions/${id}`, v); await institutionsView(); say(`✅ ${v.name} updated.`); }
+  catch (e) { m.className = "err"; m.textContent = e.message; }
 }
 async function addInstitution() {
-  const m = $("imsg"), body = { name: $("in_name").value.trim(), city: $("in_city").value.trim(), state: $("in_state").value.trim(), fee: $("in_fee").value };
-  if (!body.name) { m.className = "err"; m.textContent = "Enter the institution's name."; return; }
-  if (!(+body.fee >= 0) || body.fee === "") { m.className = "err"; m.textContent = "Enter the yearly fee (0 or more)."; return; }
+  const m = $("imsg"), v = readInst("in_"), fee = $("in_fee").value;
+  if (typeof v === "string") { m.className = "err"; m.textContent = v; return; }
+  if (fee === "" || !(+fee >= 0)) { m.className = "err"; m.textContent = "Enter the yearly fee (0 or more)."; return; }
   try {
-    await api("/api/super/institutions", body);
+    await api("/api/super/institutions", { ...v, fee });
     await institutionsView();
-    $("imsg").className = "mute"; $("imsg").textContent = `✅ ${body.name} added. Students can now choose it when signing up.`;
+    $("imsg").className = "mute"; $("imsg").textContent = `✅ ${v.name} added. Students can now choose it when signing up.`;
   } catch (e) { m.className = "err"; m.textContent = e.message; }
 }
 async function makeAdmin(id) {

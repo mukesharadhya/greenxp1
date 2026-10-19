@@ -245,7 +245,7 @@ const superAdmin = (req, res, next) =>
   req.profile.role === "super_admin" ? next() : res.status(403).json({ error: "Only the platform super admin can manage institutions" });
 
 app.get("/api/super/institutions", auth, superAdmin, wrap(async (req, res) => {
-  const colleges = must(await db.from("colleges").select("id,name,city,state,active,created_at").order("name"));
+  const colleges = must(await db.from("colleges").select("id,name,city,state,pincode,active,created_at").order("name"));
   const people = must(await db.from("profiles").select("college_id,role,approval_status,email"));
   res.json(colleges.map((c) => {
     const mine = people.filter((p) => p.college_id === c.id);
@@ -256,12 +256,23 @@ app.get("/api/super/institutions", auth, superAdmin, wrap(async (req, res) => {
 }));
 
 app.post("/api/super/institutions", auth, superAdmin, wrap(async (req, res) => {
-  const { name, city, state, fee } = req.body;
+  const { name, city, state, pincode, fee } = req.body;
   const { data, error } = await db.rpc("create_institution", { p_template: req.profile.college_id, p_name: String(name || ""),
-    p_city: String(city || ""), p_state: String(state || ""), p_fee: Number(fee) });
+    p_city: String(city || ""), p_state: String(state || ""), p_pincode: String(pincode || ""), p_fee: Number(fee) });
   if (error) return res.status(400).json({ error: error.message });
   must(await db.from("audit_logs").insert({ actor_id: req.user.id, action: "create_institution", target_type: "college", target_id: data, details: { name } }));
   res.json({ id: data });
+}));
+
+// Edit an institution's name and location.
+app.post("/api/super/institutions/:id", auth, superAdmin, wrap(async (req, res) => {
+  const f = Object.fromEntries(["name", "city", "state", "pincode"].map((k) => [k, String(req.body[k] || "").trim()]));
+  if (!f.name || !f.city || !f.state) return res.status(400).json({ error: "Name, city and state are required" });
+  if (!/^[1-9][0-9]{5}$/.test(f.pincode)) return res.status(400).json({ error: "Pincode must be 6 digits" });
+  const { error } = await db.from("colleges").update(f).eq("id", req.params.id);
+  if (error) return res.status(400).json({ error: error.code === "23505" ? "An institution with this name already exists" : error.message });
+  must(await db.from("audit_logs").insert({ actor_id: req.user.id, action: "edit_institution", target_type: "college", target_id: req.params.id, details: f }));
+  res.json({ ok: true });
 }));
 
 app.post("/api/super/institutions/:id/active", auth, superAdmin, wrap(async (req, res) => {
