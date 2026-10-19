@@ -34,6 +34,21 @@ tbody tr:hover:not(.editrow){background:var(--line)}
 th.n,td.n{text-align:right;font-variant-numeric:tabular-nums}
 td.acts button{margin:.1rem 0}
 button.danger{color:#b3261e;border-color:#b3261e}
+/* Institutions table: '#' and name frozen on the left (like Excel's Freeze Panes), visible scrollbars above and below */
+.tbl.freeze{max-height:70vh;overflow:auto}
+.tbl.freeze table{width:max-content;min-width:100%}
+.tbl.freeze td.fz2{white-space:normal;min-width:240px;max-width:320px}
+.fz1,.fz2{position:sticky;z-index:1;background:var(--card)}
+.fz1{left:0;width:2.6rem;min-width:2.6rem}
+.fz2{left:2.6rem;box-shadow:3px 0 0 var(--line)}
+thead .fz1,thead .fz2{z-index:3}thead th{z-index:2}
+tbody tr:nth-child(even):not(.editrow) .fz1,tbody tr:nth-child(even):not(.editrow) .fz2{background:color-mix(in srgb,var(--line) 35%,var(--card))}
+tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:var(--line)}
+.topscroll{overflow-x:auto;overflow-y:hidden;height:16px;margin-bottom:.3rem}.topscroll div{height:1px}
+.tbl,.topscroll{scrollbar-color:var(--pri) var(--line);scrollbar-width:auto}
+.tbl::-webkit-scrollbar,.topscroll::-webkit-scrollbar{height:12px;width:12px}
+.tbl::-webkit-scrollbar-thumb,.topscroll::-webkit-scrollbar-thumb{background:var(--pri);border-radius:8px;border:2px solid var(--line)}
+.tbl::-webkit-scrollbar-track,.topscroll::-webkit-scrollbar-track{background:var(--line);border-radius:8px}
 .err{color:#b3261e;font-weight:700}.bar{height:12px;background:var(--line);border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pri)}
 </style></head>
 <body><div class="app" id="app">Loading…</div><nav class="tabs" id="tabs" hidden></nav>
@@ -747,14 +762,28 @@ function renderInstTable() {
   const rows = instList.filter(c => !q || [c.name, c.city, c.state, c.pincode].some(v => (v || "").toLowerCase().includes(q)));
   const gaps = instList.filter(c => !c.city || !c.state || !c.pincode).length;
   say(`${rows.length} of ${instList.length} institution${instList.length === 1 ? "" : "s"}${gaps ? ` · ⚠ ${gaps} missing city, state or pincode – use Edit to complete them` : ""}`);
-  $("q").innerHTML = rows.length ? `<div class="tbl"><table>
-    <thead><tr><th>#</th><th>Institution</th><th>City</th><th>State</th><th>Pincode</th><th class="n">Students</th><th class="n">Waiting</th><th>Admins</th><th>Status</th><th>Actions</th></tr></thead>
-    <tbody>${rows.map((c, i) => instRow(c, i + 1)).join("")}</tbody></table></div>` : `<p class="mute">No institutions match “${esc(q)}”.</p>`;
+  if (!rows.length) { $("q").innerHTML = `<p class="mute">No institutions match “${esc(q)}”.</p>`; return; }
+  $("q").innerHTML = `<p class="mute" style="font-size:.8rem;margin:.2rem 0">◀ Scroll sideways for more columns – the institution name stays in place ▶</p>
+    <div class="topscroll" id="itop"><div></div></div>
+    <div class="tbl freeze" id="itbl"><table>
+    <thead><tr><th class="fz1">#</th><th class="fz2">Institution</th><th>City</th><th>State</th><th>Pincode</th><th class="n">Students</th><th class="n">Waiting</th><th>Admins</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody>${rows.map((c, i) => instRow(c, i + 1)).join("")}</tbody></table></div>`;
+  syncTopScroll();
+}
+// A second scrollbar above the table, kept in step with the one below it.
+function syncTopScroll() {
+  const top = $("itop"), tbl = $("itbl");
+  if (!top || !tbl) return;
+  const size = () => { top.firstChild.style.width = tbl.scrollWidth + "px"; top.hidden = tbl.scrollWidth <= tbl.clientWidth; };
+  size();
+  const link = (from, to) => from.onscroll = () => { if (to.scrollLeft !== from.scrollLeft) to.scrollLeft = from.scrollLeft; };
+  link(top, tbl); link(tbl, top);
+  window.onresize = size;
 }
 function instRow(c, n) {
   const own = c.id === me.college_id;
-  return `<tr id="ir_${c.id}"><td class="mute">${n}</td>
-  <td><b>${esc(c.name)}</b>${own ? `<br><span class="mute" style="font-size:.8rem">your institution</span>` : ""}</td>
+  return `<tr id="ir_${c.id}"><td class="mute fz1">${n}</td>
+  <td class="fz2"><b>${esc(c.name)}</b>${own ? `<br><span class="mute" style="font-size:.8rem">your institution</span>` : ""}</td>
   ${[c.city, c.state, c.pincode].map(v => `<td>${v ? esc(v) : `<span class="warn" style="padding:.1rem .4rem">missing</span>`}</td>`).join("")}
   <td class="n">${c.students}</td><td class="n">${c.waiting || "—"}</td>
   <td style="font-size:.85rem">${c.admins.length ? c.admins.map(esc).join("<br>") : `<span class="mute">None</span>`}</td>
