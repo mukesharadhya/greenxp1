@@ -49,6 +49,9 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 .tbl::-webkit-scrollbar,.topscroll::-webkit-scrollbar{height:12px;width:12px}
 .tbl::-webkit-scrollbar-thumb,.topscroll::-webkit-scrollbar-thumb{background:var(--pri);border-radius:8px;border:2px solid var(--line)}
 .tbl::-webkit-scrollbar-track,.topscroll::-webkit-scrollbar-track{background:var(--line);border-radius:8px}
+.paygrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.6rem;margin-bottom:.6rem}
+.payopt{display:flex;flex-direction:column;align-items:flex-start;gap:.15rem;text-align:left;padding:.8rem}
+.payopt span{font-size:1.5rem}.payopt small{font-weight:400;font-size:.8rem;opacity:.9}
 .err{color:#b3261e;font-weight:700}.bar{height:12px;background:var(--line);border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pri)}
 </style></head>
 <body><div class="app" id="app">Loading…</div><nav class="tabs" id="tabs" hidden></nav>
@@ -301,20 +304,37 @@ async function analysisScreen() {
 
 async function payScreen(y) {
   const { data: f } = y ? await db.from("fee_settings").select("amount,currency").eq("college_id", me.college_id).eq("academic_year_id", y.id).eq("active", true).maybeSingle() : { data: null };
+  const phone = matchMedia("(pointer: coarse)").matches; // UPI apps open directly on phones; on computers a QR code is shown
   $("app").innerHTML = `<h2>Activate your year</h2><div class="card"><h1>₹${f ? f.amount : "-"}</h1><p class="mute">Includes XP tracking, badges, challenges, leaderboards and your annual certificate.</p>
-  <button id="paybtn" onclick="pay()">Pay now</button><p id="msg"></p></div>`;
+  <p><b>Choose how to pay</b></p>
+  <div class="paygrid">
+    <button class="payopt" onclick="pay('upi')"><span>📱</span><b>UPI app</b><small>${phone ? "Google Pay, PhonePe, Paytm…" : "Opens a QR code to scan with your phone"}</small></button>
+    <button class="payopt" onclick="pay('qr')"><span>🔳</span><b>Scan QR code</b><small>Scan with any UPI app</small></button>
+    <button class="payopt o" onclick="pay('other')"><span>💳</span><b>Card / Net banking</b><small>Debit or credit card, net banking, wallets</small></button>
+  </div><p id="msg"></p><p class="mute" style="font-size:.8rem">🔒 Payments are processed securely by Razorpay. GreenXP never sees your card or UPI PIN.</p></div>`;
 }
-async function pay() {
-  const b = $("paybtn");
-  if (b.disabled) return;
-  b.disabled = true; say("Starting payment…");
+// Razorpay Checkout opens on the chosen method: UPI apps and QR (UPI ID "collect" is deprecated by NPCI), QR only, or everything.
+const PAY_DISPLAY = {
+  upi: { blocks: { upi: { name: "Pay with UPI", instruments: [{ method: "upi", flows: ["intent", "qr"] }] } }, sequence: ["block.upi"], preferences: { show_default_blocks: false } },
+  qr: { blocks: { qr: { name: "Scan & pay with any UPI app", instruments: [{ method: "upi", flows: ["qr"] }] } }, sequence: ["block.qr"], preferences: { show_default_blocks: false } },
+  other: null
+};
+async function pay(method = "other") {
+  const btns = document.querySelectorAll(".payopt");
+  if ([...btns].some(b => b.disabled)) return;
+  btns.forEach(b => b.disabled = true); say("Starting payment…");
   try {
     const o = await api("/api/payments/create-order");
     say("");
-    new Razorpay({ key: o.keyId, order_id: o.orderId, amount: o.amount, currency: o.currency, name: "GreenXP",
-      handler: async r => { try { await api("/api/payments/verify", r); init(); } catch (e) { say(e.message, 1); } } }).open();
+    const rzp = new Razorpay({ key: o.keyId, order_id: o.orderId, amount: o.amount, currency: o.currency, name: "GreenXP",
+      description: "Yearly membership", prefill: { email: me.email || "", contact: me.phone || "" }, theme: { color: "#19b37a" },
+      ...(PAY_DISPLAY[method] ? { config: { display: PAY_DISPLAY[method] } } : {}),
+      modal: { ondismiss: () => say("Payment cancelled. Choose a way to pay to try again.") },
+      handler: async r => { say("Confirming your payment…"); try { await api("/api/payments/verify", r); init(); } catch (e) { say(e.message, 1); } } });
+    rzp.on("payment.failed", r => say(`Payment failed: ${r.error?.description || "please try again"}.`, 1));
+    rzp.open();
   } catch (e) { say(e.message, 1); }
-  finally { b.disabled = false; }
+  finally { btns.forEach(b => b.disabled = false); }
 }
 function show(t) {
   tab = t;
