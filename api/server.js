@@ -240,6 +240,47 @@ app.post("/api/admin/certificates/issue", auth, admin, wrap(async (req, res) => 
   res.json({ issued: data });
 }));
 
+// Institutions (super admin only): list, add, switch on/off, and appoint each institution's admin.
+const superAdmin = (req, res, next) =>
+  req.profile.role === "super_admin" ? next() : res.status(403).json({ error: "Only the platform super admin can manage institutions" });
+
+app.get("/api/super/institutions", auth, superAdmin, wrap(async (req, res) => {
+  const colleges = must(await db.from("colleges").select("id,name,city,state,active,created_at").order("name"));
+  const people = must(await db.from("profiles").select("college_id,role,approval_status,email"));
+  res.json(colleges.map((c) => {
+    const mine = people.filter((p) => p.college_id === c.id);
+    return { ...c, students: mine.filter((p) => p.role === "student").length,
+      waiting: mine.filter((p) => p.role === "student" && p.approval_status === "pending").length,
+      admins: mine.filter((p) => ["admin", "super_admin"].includes(p.role)).map((p) => p.email) };
+  }));
+}));
+
+app.post("/api/super/institutions", auth, superAdmin, wrap(async (req, res) => {
+  const { name, city, state, fee } = req.body;
+  const { data, error } = await db.rpc("create_institution", { p_template: req.profile.college_id, p_name: String(name || ""),
+    p_city: String(city || ""), p_state: String(state || ""), p_fee: Number(fee) });
+  if (error) return res.status(400).json({ error: error.message });
+  must(await db.from("audit_logs").insert({ actor_id: req.user.id, action: "create_institution", target_type: "college", target_id: data, details: { name } }));
+  res.json({ id: data });
+}));
+
+app.post("/api/super/institutions/:id/active", auth, superAdmin, wrap(async (req, res) => {
+  if (req.params.id === req.profile.college_id && !req.body.active) return res.status(400).json({ error: "You can't switch off your own institution" });
+  must(await db.from("colleges").update({ active: !!req.body.active }).eq("id", req.params.id));
+  res.json({ ok: true });
+}));
+
+app.post("/api/super/institutions/:id/admin", auth, superAdmin, wrap(async (req, res) => {
+  const email = String(req.body.email || "").trim().toLowerCase();
+  const p = must(await db.from("profiles").select("id,college_id,role").eq("email", email).maybeSingle());
+  if (!p) return res.status(404).json({ error: "No account with that email. Ask them to sign up first, choosing this institution." });
+  if (p.college_id !== req.params.id) return res.status(400).json({ error: "That person signed up at a different institution" });
+  if (p.role === "super_admin") return res.status(400).json({ error: "That person is already the super admin" });
+  must(await db.from("profiles").update({ role: "admin", approval_status: "approved", approved_by: req.user.id, approved_at: new Date().toISOString() }).eq("id", p.id));
+  must(await db.from("audit_logs").insert({ actor_id: req.user.id, action: "make_admin", target_type: "profile", target_id: p.id, details: { email } }));
+  res.json({ ok: true });
+}));
+
 // 5. Utility bills: read units and the billing period from an uploaded bill; the student checks and corrects them before saving.
 const num = { anyOf: [{ type: "number" }, { type: "null" }] }, date = { anyOf: [{ type: "string", format: "date" }, { type: "null" }] };
 const BILL_SCHEMA = {

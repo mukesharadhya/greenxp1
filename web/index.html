@@ -75,12 +75,26 @@ async function init() {
 }
 async function authScreen() {
   $("tabs").hidden = true;
-  const { data: cs } = await db.from("colleges").select("id,name");
+  const { data: cs } = await db.from("colleges").select("id,name,city").eq("active", true).order("name");
   $("app").innerHTML = `<h1>🌱 GreenXP</h1><p class="mute">Earn XP. Go Green. Make an Impact.</p><div class="stats" id="counters"></div><div class="card">
-  <label>College</label><select id="col">${(cs||[]).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select>
-  <label>Full name (sign-up only)</label><input id="nm"><label>Email</label><input id="em" type="email"><label>Password</label><input id="pw" type="password">
-  <div class="row"><button onclick="signup()">Sign up</button><button class="o" onclick="login()">Log in</button></div><p id="msg"></p></div>`;
+  <div class="row" style="justify-content:flex-start;margin-bottom:.8rem"><button id="m_login" onclick="authMode('login')">Log in</button><button id="m_signup" class="o" onclick="authMode('signup')">Sign up</button></div>
+  <div id="su" hidden>
+    <label for="col">Institution</label><select id="col"><option value="">Select your institution…</option>${(cs || []).map(c =>
+      `<option value="${c.id}">${esc(c.name)}${c.city ? " — " + esc(c.city) : ""}</option>`).join("")}</select>
+    <label for="nm">Full name</label><input id="nm" autocomplete="name"></div>
+  <label for="em">Email</label><input id="em" type="email" autocomplete="email">
+  <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password">
+  <p><button id="go" onclick="login()">Log in</button></p><p id="msg"></p>
+  <p id="su_note" class="mute" hidden>Can't find your institution? Ask your college to contact the GreenXP team.</p></div>`;
   showCounters();
+}
+function authMode(m) {
+  const up = m === "signup";
+  $("su").hidden = $("su_note").hidden = !up;
+  $("m_login").className = up ? "o" : ""; $("m_signup").className = up ? "" : "o";
+  $("pw").autocomplete = up ? "new-password" : "current-password";
+  $("go").textContent = up ? "Create account" : "Log in"; $("go").onclick = up ? signup : login;
+  say("");
 }
 // Live totals on the login page, counting up from zero.
 const fmtKg = kg => kg >= 1000 ? `${(kg / 1000).toFixed(kg >= 1e4 ? 0 : 1)} t` : `${kg >= 10 ? Math.round(kg) : kg.toFixed(1)} kg`;
@@ -105,9 +119,15 @@ async function showCounters() {
   requestAnimationFrame(step);
 }
 async function signup() {
-  const { error } = await db.auth.signUp({ email: $("em").value, password: $("pw").value, options: { data: { full_name: $("nm").value, college_id: $("col").value } } });
+  if (!$("col").value) return say("Select your institution.", 1);
+  if (!$("nm").value.trim()) return say("Enter your full name.", 1);
+  if ($("pw").value.length < 6) return say("Use a password of at least 6 characters.", 1);
+  const { data, error } = await db.auth.signUp({ email: $("em").value.trim(), password: $("pw").value,
+    options: { data: { full_name: $("nm").value.trim(), college_id: $("col").value } } });
   if (error) return say(error.message, 1);
-  say("Account created. If email confirmation is on, check your inbox, then log in.");
+  if (data.session) return init(); // email confirmation is off: straight in
+  authMode("login");
+  say("Account created. Check your inbox to confirm your email, then log in.");
 }
 async function login() {
   const { error } = await db.auth.signInWithPassword({ email: $("em").value, password: $("pw").value });
@@ -547,12 +567,19 @@ const SECTIONS = {
   }
 };
 let adminSection = "users", adminView = "pending", adminData = [], adminSel = new Set();
+// Portal heading, stats and section switcher; the super admin also gets the Institutions section.
+function adminHeader() {
+  const secs = Object.entries(SECTIONS).map(([k, s]) => [k, s.title]);
+  if (me.role === "super_admin") secs.push(["institutions", "🏫 Institutions"]);
+  return `<h2>🛠 Admin portal</h2><div id="stats" class="stats"></div>
+  <div class="row" style="justify-content:flex-start;flex-wrap:wrap;margin-bottom:.7rem">${secs.map(([k, t]) =>
+    `<button class="${k === adminSection ? "" : "o"}" onclick="adminSection='${k}';adminView='pending';admin()">${t} <span class="pill" id="n_${k}" hidden></span></button>`).join("")}</div>`;
+}
 async function admin() {
+  if (adminSection === "institutions") return institutionsView();
   const S = SECTIONS[adminSection];
   adminSel = new Set();
-  $("app").innerHTML = `<h2>🛠 Admin portal</h2><div id="stats" class="stats"></div>
-  <div class="row" style="justify-content:flex-start;flex-wrap:wrap;margin-bottom:.7rem">${Object.entries(SECTIONS).map(([k, s]) =>
-    `<button class="${k === adminSection ? "" : "o"}" onclick="adminSection='${k}';adminView='pending';admin()">${s.title} <span class="pill" id="n_${k}" hidden></span></button>`).join("")}</div>
+  $("app").innerHTML = adminHeader() + `
   <div class="card"><h3>${S.title}</h3>
     <div class="row" style="justify-content:flex-start;flex-wrap:wrap">${S.views.map(([k, t]) => `<button class="s${k === adminView ? "" : " o"}" onclick="adminView='${k}';admin()">${t}</button>`).join("")}</div>
     <label for="af" style="display:block;margin-top:.6rem">${S.filter[0]}</label><select id="af" onchange="renderQueue()"><option value="">All</option></select>
@@ -643,6 +670,53 @@ async function reviewMany(approve, ids = [...adminSel]) {
     if (r.failed.length) say([...new Set(r.failed.map(f => f.error))].join(". "), 1);
     else say(S.doneMsg(r.done, approve));
   } catch (e) { say(e.message, 1); }
+}
+async function institutionsView() {
+  $("app").innerHTML = adminHeader() + `<div class="card"><h3>➕ Add an institution</h3>
+    <label for="in_name">Institution name</label><input id="in_name" placeholder="e.g. RV College of Engineering">
+    <div class="row"><span style="flex:1"><label for="in_city">City</label><input id="in_city"></span><span style="flex:1"><label for="in_state">State</label><input id="in_state"></span></div>
+    <label for="in_fee">Yearly membership fee (₹)</label><input id="in_fee" type="number" min="0" step="1" value="199">
+    <p class="mute">The new institution gets this year's academic calendar, all current activities and the certificate rules, copied from yours. Students can choose it when they sign up straight away.</p>
+    <button onclick="addInstitution()">Add institution</button><p id="imsg"></p></div>
+  <div class="card"><h3>🏫 Institutions</h3><p id="msg" class="mute">Loading…</p><div id="q"></div></div>`;
+  loadStats();
+  try {
+    const list = await api("/api/super/institutions", null, "GET");
+    say(`${list.length} institution${list.length === 1 ? "" : "s"}`);
+    $("q").innerHTML = `<div class="grid">${list.map(instCard).join("")}</div>`;
+  } catch (e) { say(e.message, 1); }
+}
+function instCard(c) {
+  const own = c.id === me.college_id;
+  return `<div class="card"><div class="row"><b>${esc(c.name)}</b><span class="pill"${c.active ? "" : ` style="background:var(--line);color:var(--mute)"`}>${c.active ? "Active" : "Switched off"}</span></div>
+  <span class="mute">${esc([c.city, c.state].filter(Boolean).join(", ") || "Location not set")}${own ? " · your institution" : ""}</span>
+  <div class="row mute" style="margin-top:.5rem"><span>Students</span><b>${c.students}${c.waiting ? ` (${c.waiting} waiting)` : ""}</b></div>
+  <div class="row mute"><span>Admins</span><span style="text-align:right">${c.admins.length ? c.admins.map(esc).join("<br>") : "None yet"}</span></div>
+  <label for="ad_${c.id}" style="display:block;margin-top:.6rem">Make someone its admin</label>
+  <input id="ad_${c.id}" type="email" placeholder="Email they signed up with">
+  <p class="row" style="justify-content:flex-start;flex-wrap:wrap"><button class="s" onclick="makeAdmin('${c.id}')">Make admin</button>
+  ${own ? "" : `<button class="s o" onclick="setActive('${c.id}',${!c.active})">${c.active ? "Switch off" : "Switch on"}</button>`}</p></div>`;
+}
+async function addInstitution() {
+  const m = $("imsg"), body = { name: $("in_name").value.trim(), city: $("in_city").value.trim(), state: $("in_state").value.trim(), fee: $("in_fee").value };
+  if (!body.name) { m.className = "err"; m.textContent = "Enter the institution's name."; return; }
+  if (!(+body.fee >= 0) || body.fee === "") { m.className = "err"; m.textContent = "Enter the yearly fee (0 or more)."; return; }
+  try {
+    await api("/api/super/institutions", body);
+    await institutionsView();
+    $("imsg").className = "mute"; $("imsg").textContent = `✅ ${body.name} added. Students can now choose it when signing up.`;
+  } catch (e) { m.className = "err"; m.textContent = e.message; }
+}
+async function makeAdmin(id) {
+  const email = $("ad_" + id).value.trim();
+  if (!email) return;
+  if (!confirm(`Make ${email} an admin of this institution? They will be able to approve its students and activities.`)) return;
+  try { await api(`/api/super/institutions/${id}/admin`, { email }); await institutionsView(); say(`✅ ${email} is now an admin.`); }
+  catch (e) { say(e.message, 1); }
+}
+async function setActive(id, active) {
+  if (!active && !confirm("Switch off this institution? It will disappear from the sign-up list. Existing accounts keep working.")) return;
+  try { await api(`/api/super/institutions/${id}/active`, { active }); institutionsView(); } catch (e) { say(e.message, 1); }
 }
 async function issueAll() {
   if (!confirm("Issue year-end certificates now?")) return;
