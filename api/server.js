@@ -53,7 +53,7 @@ app.post("/api/payments/webhook", express.raw({ type: "application/json" }), wra
   res.json({ ok: true });
 }));
 
-app.use(express.json());
+app.use(express.json({ limit: "1mb" })); // room for bulk institution imports
 app.get("/health", (_, res) => res.json({ ok: true }));
 
 const auth = wrap(async (req, res, next) => {
@@ -262,6 +262,23 @@ app.post("/api/super/institutions", auth, superAdmin, wrap(async (req, res) => {
   if (error) return res.status(400).json({ error: error.message });
   must(await db.from("audit_logs").insert({ actor_id: req.user.id, action: "create_institution", target_type: "college", target_id: data, details: { name } }));
   res.json({ id: data });
+}));
+
+// Bulk import from a spreadsheet (already parsed and checked in the browser). Each row is created on its own,
+// so one bad row doesn't stop the rest; the result says what happened to every row.
+app.post("/api/super/institutions/bulk", auth, superAdmin, wrap(async (req, res) => {
+  const rows = req.body.rows;
+  if (!Array.isArray(rows) || !rows.length || rows.length > 500) return res.status(400).json({ error: "Upload between 1 and 500 institutions at a time" });
+  const results = [];
+  for (const r of rows) {
+    const { data, error } = await db.rpc("create_institution", { p_template: req.profile.college_id, p_name: String(r.name || ""),
+      p_city: String(r.city || ""), p_state: String(r.state || ""), p_pincode: String(r.pincode || ""), p_fee: Number(r.fee) });
+    results.push(error ? { ok: false, error: error.message } : { ok: true, id: data });
+  }
+  const created = results.filter((r) => r.ok).length;
+  must(await db.from("audit_logs").insert({ actor_id: req.user.id, action: "bulk_import_institutions", target_type: "college",
+    details: { submitted: rows.length, created } }));
+  res.json({ created, results });
 }));
 
 // Edit an institution's name and location.
