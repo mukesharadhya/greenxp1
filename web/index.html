@@ -598,7 +598,8 @@ const SECTIONS = {
     empty: { pending: "No new users waiting. 🎉", approved: "No approved users yet.", rejected: "No rejected users." },
     reasons: ["USN doesn't match our records", "Not a student of this college", "Incomplete or incorrect details", "Duplicate account"],
     approveMsg: n => `Approve ${n} users? They can then pay and use GreenXP.`, doneMsg: (n, ok) => `${n} user${n > 1 ? "s" : ""} ${ok ? "approved" : "rejected"}.`,
-    card: userCard
+    search: u => [u.full_name, u.email, u.usn, u.phone].join(" "), placeholder: "Search name, email, USN or mobile",
+    table: userTable
   },
   activities: {
     title: "⭐ Activities", noun: ["submission", "submissions"],
@@ -608,6 +609,7 @@ const SECTIONS = {
     empty: { pending: "No activities waiting. 🎉", verified: "No approved submissions yet.", rejected: "No rejected submissions." },
     reasons: ["Photo doesn't show the activity", "Photo is unclear or too dark", "Same photo was used before", "Doesn't meet the activity rules"],
     approveMsg: n => `Approve ${n} submissions and award their XP?`, doneMsg: (n, ok) => `${n} submission${n > 1 ? "s" : ""} ${ok ? "approved, XP awarded" : "rejected"}.`,
+    search: s => [s.student.full_name, s.student.usn, s.activities.name].join(" "), placeholder: "Search student, USN or activity",
     card: subCard
   }
 };
@@ -627,7 +629,9 @@ async function admin() {
   $("app").innerHTML = adminHeader() + `
   <div class="card"><h3>${S.title}</h3>
     <div class="row" style="justify-content:flex-start;flex-wrap:wrap">${S.views.map(([k, t]) => `<button class="s${k === adminView ? "" : " o"}" onclick="adminView='${k}';admin()">${t}</button>`).join("")}</div>
-    <label for="af" style="display:block;margin-top:.6rem">${S.filter[0]}</label><select id="af" onchange="renderQueue()"><option value="">All</option></select>
+    <div class="row" style="flex-wrap:wrap;align-items:flex-end;margin-top:.6rem">
+      <span style="flex:2;min-width:200px"><label for="as">Search</label><input id="as" type="search" placeholder="${S.placeholder}" oninput="renderQueue()"></span>
+      <span style="flex:1;min-width:150px"><label for="af">${S.filter[0]}</label><select id="af" onchange="renderQueue()"><option value="">All</option></select></span></div>
     <div id="bulk"></div><p id="msg" class="mute">Loading…</p><div id="q"></div></div>
   <div id="ls"></div>
   <div class="card"><h3>🎓 Year-end certificates</h3><p class="mute">Issues certificates to members who reached the XP thresholds this academic year. Students who already have one are skipped.</p>
@@ -652,30 +656,50 @@ async function loadStats() {
     for (const [k, n] of [["users", s.usersPending], ["activities", s.pending]]) { const b = $("n_" + k); if (b) { b.textContent = n; b.hidden = !n; } }
   } catch (e) { $("stats").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
 }
-const shown = () => { const f = $("af").value; return adminData.filter(x => !f || SECTIONS[adminSection].filter[1](x) === f); };
+const shown = () => {
+  const S = SECTIONS[adminSection], f = $("af").value, q = ($("as")?.value || "").trim().toLowerCase();
+  return adminData.filter(x => (!f || S.filter[1](x) === f) && (!q || S.search(x).toLowerCase().includes(q)));
+};
 function renderQueue() {
   const S = SECTIONS[adminSection], list = shown(), pending = adminView === "pending";
   adminSel = new Set([...adminSel].filter(id => list.some(x => x.id === id)));
-  $("bulk").innerHTML = pending && list.length ? `<div class="row" style="margin:.3rem 0 .6rem;flex-wrap:wrap">
-    ${checkbox(`onchange="selectAll(this.checked)"${adminSel.size === list.length ? " checked" : ""}`, `Select all (${list.length})`)}
+  renderBulkBar(list);
+  const filtered = list.length !== adminData.length;
+  say(list.length ? (filtered ? `Showing ${list.length} of ${adminData.length}` : `${list.length} ${S.noun[list.length > 1 ? 1 : 0]}`)
+    : adminData.length ? "Nothing matches your search or filter." : S.empty[adminView]);
+  if (!list.length) { $("q").innerHTML = ""; return; }
+  if (S.table) { $("q").innerHTML = S.table(list, pending); syncTopScroll("utop", "utbl"); }
+  else $("q").innerHTML = `<div class="grid">${list.map(x => S.card(x, pending)).join("")}</div>`;
+}
+// The Select all / Approve selected / Reject selected bar; redrawn on its own so ticking a box doesn't reset the table's scroll.
+function renderBulkBar(list = shown()) {
+  $("bulk").innerHTML = adminView === "pending" && list.length ? `<div class="row" style="margin:.3rem 0 .6rem;flex-wrap:wrap">
+    ${checkbox(`id="selall" onchange="selectAll(this.checked)"${adminSel.size === list.length ? " checked" : ""}`, `Select all (${list.length})`)}
     <span><button class="s" onclick="reviewMany(true)"${adminSel.size ? "" : " disabled"}>Approve selected${adminSel.size ? ` (${adminSel.size})` : ""}</button>
     <button class="s o" onclick="reviewMany(false)"${adminSel.size ? "" : " disabled"}>Reject selected</button></span></div>` : "";
-  say(list.length ? "" : S.empty[adminView]);
-  $("q").innerHTML = `<div class="grid">${list.map(x => S.card(x, pending)).join("")}</div>`;
+}
+// New users as a table: select box and name frozen on the left, details scroll sideways.
+function userTable(list, pending) {
+  const missing = `<span class="warn" style="padding:.1rem .4rem">not filled in</span>`;
+  return `<p class="mute" style="font-size:.8rem;margin:.2rem 0">◀ Scroll sideways for more details – the name stays in place ▶</p>
+  <div class="topscroll" id="utop"><div></div></div>
+  <div class="tbl freeze" id="utbl"><table><thead><tr>
+    <th class="fz1">${pending ? "✓" : "#"}</th><th class="fz2">Student</th><th>Email</th><th>USN</th><th>Department</th><th class="n">Year</th><th>Mobile</th>
+    <th>${pending ? "Signed up" : "Decision"}</th>${pending ? "<th>Actions</th>" : "<th>Reason</th>"}</tr></thead><tbody>` +
+  list.map((u, i) => `<tr>
+    <td class="fz1">${pending ? `<input type="checkbox" data-sel="${u.id}" style="width:auto;margin:0" onchange="toggleSel('${u.id}',this.checked)"${adminSel.has(u.id) ? " checked" : ""} aria-label="Select ${esc(u.full_name)}">` : `<span class="mute">${i + 1}</span>`}</td>
+    <td class="fz2"><b>${esc(u.full_name || "No name")}</b></td>
+    <td>${esc(u.email)}</td><td>${u.usn ? `<b>${esc(u.usn)}</b>` : missing}</td><td>${u.department ? esc(u.department) : missing}</td>
+    <td class="n">${u.year || "—"}</td><td>${u.phone ? esc(u.phone) : `<span class="mute">—</span>`}</td>
+    ${pending
+      ? `<td title="${esc(new Date(u.created_at).toLocaleString("en-IN"))}">${ago(u.created_at)}</td>
+         <td class="acts"><button class="s" onclick="reviewMany(true,['${u.id}'])">Approve</button> <button class="s o" onclick="reviewMany(false,['${u.id}'])">Reject</button></td>`
+      : `<td>${u.approval_status === "approved" ? "✅ Approved" : "❌ Rejected"} ${u.approved_at ? ago(u.approved_at) : ""}${u.approver ? `<br><span class="mute" style="font-size:.8rem">by ${esc(u.approver.full_name)}</span>` : ""}</td>
+         <td style="white-space:normal;min-width:180px">${u.approval_note ? esc(u.approval_note) : `<span class="mute">—</span>`}</td>`}</tr>`).join("") +
+  `</tbody></table></div>`;
 }
 const reviewButtons = id => `<div class="row" style="margin-top:.6rem">${checkbox(`onchange="toggleSel('${id}',this.checked)"${adminSel.has(id) ? " checked" : ""}`, "Select")}
   <span><button class="s" onclick="reviewMany(true,['${id}'])">Approve</button> <button class="s o" onclick="reviewMany(false,['${id}'])">Reject</button></span></div>`;
-function userCard(u, pending) {
-  const filled = u.usn && u.department;
-  return `<div class="card"><div class="row"><b>${esc(u.full_name || "No name")}</b>${pending ? `<span class="mute">${ago(u.created_at)}</span>` : ""}</div>
-  <span class="mute">${esc(u.email)}</span>
-  ${filled ? `<div style="margin-top:.4rem"><div class="row mute"><span>USN</span><b>${esc(u.usn)}</b></div><div class="row mute"><span>Department</span><span>${esc(u.department)}${u.year ? " · Year " + u.year : ""}</span></div>
-    ${u.phone ? `<div class="row mute"><span>Mobile</span><span>${esc(u.phone)}</span></div>` : ""}</div>`
-    : `<div class="warn">Hasn't filled in their USN and department yet.</div>`}
-  ${pending ? reviewButtons(u.id)
-    : `<p class="mute">${u.approval_status === "approved" ? "✅ Approved" : "❌ Rejected"} ${u.approved_at ? ago(u.approved_at) : ""}${u.approver ? " by " + esc(u.approver.full_name) : ""}${u.approval_note ? `<br>Reason: ${esc(u.approval_note)}` : ""}</p>`}
-  </div>`;
-}
 function subCard(s, pending) {
   const st = s.student, a = s.activities;
   return `<div class="card">
@@ -689,8 +713,12 @@ function subCard(s, pending) {
   </div>`;
 }
 function zoom(src) { $("lb").querySelector("img").src = src; $("lb").hidden = false; }
-function toggleSel(id, on) { on ? adminSel.add(id) : adminSel.delete(id); renderQueue(); }
-function selectAll(on) { adminSel = new Set(on ? shown().map(x => x.id) : []); renderQueue(); }
+function toggleSel(id, on) { on ? adminSel.add(id) : adminSel.delete(id); SECTIONS[adminSection].table ? renderBulkBar() : renderQueue(); }
+function selectAll(on) {
+  adminSel = new Set(on ? shown().map(x => x.id) : []);
+  if (!SECTIONS[adminSection].table) return renderQueue();
+  document.querySelectorAll("[data-sel]").forEach(cb => cb.checked = on); renderBulkBar();
+}
 function askReason(reasons) {
   return new Promise(done => {
     const d = $("rj");
@@ -771,8 +799,8 @@ function renderInstTable() {
   syncTopScroll();
 }
 // A second scrollbar above the table, kept in step with the one below it.
-function syncTopScroll() {
-  const top = $("itop"), tbl = $("itbl");
+function syncTopScroll(topId = "itop", tblId = "itbl") {
+  const top = $(topId), tbl = $(tblId);
   if (!top || !tbl) return;
   const size = () => { top.firstChild.style.width = tbl.scrollWidth + "px"; top.hidden = tbl.scrollWidth <= tbl.clientWidth; };
   size();
