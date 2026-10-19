@@ -735,7 +735,17 @@ function instCard(c) {
   <input id="ad_${c.id}" type="email" placeholder="Email they signed up with">
   <p class="row" style="justify-content:flex-start;flex-wrap:wrap"><button class="s" onclick="makeAdmin('${c.id}')">Make admin</button>
   <button class="s o" onclick="editInst('${c.id}')">Edit</button>
-  ${own ? "" : `<button class="s o" onclick="setActive('${c.id}',${!c.active})">${c.active ? "Switch off" : "Switch on"}</button>`}</p>`;
+  ${own ? "" : `<button class="s o" onclick="setActive('${c.id}',${!c.active})">${c.active ? "Switch off" : "Switch on"}</button>
+    <button class="s o" style="color:#b3261e;border-color:#b3261e" onclick="deleteInst('${c.id}')"${c.students ? ` title="Has students: switch it off instead"` : ""}>Delete</button>`}</p>`;
+}
+async function deleteInst(id) {
+  const c = instList.find(x => x.id === id);
+  if (c.students) return say(`${c.name} has ${c.students} student${c.students > 1 ? "s" : ""}, so it can't be deleted. Use Switch off to hide it from sign-up instead.`, 1);
+  const typed = prompt(`This permanently deletes ${c.name}, with its academic year, fee, activities and certificate rules.\n\nType the institution's name to confirm:`);
+  if (typed == null) return;
+  if (typed.trim().toLowerCase() !== c.name.trim().toLowerCase()) return say("The name didn't match, so nothing was deleted.", 1);
+  try { await api(`/api/super/institutions/${id}/delete`, {}); await institutionsView(); say(`🗑 ${c.name} deleted.`); }
+  catch (e) { say(e.message, 1); }
 }
 function editInst(id) {
   const c = instList.find(x => x.id === id), p = "e_" + id.slice(0, 8) + "_";

@@ -281,6 +281,20 @@ app.post("/api/super/institutions/:id/active", auth, superAdmin, wrap(async (req
   res.json({ ok: true });
 }));
 
+// Delete an institution nobody has signed up at (a mistake, test or duplicate). Its setup rows are removed
+// by ON DELETE CASCADE; anything with student data is refused, and switching it off is suggested instead.
+app.post("/api/super/institutions/:id/delete", auth, superAdmin, wrap(async (req, res) => {
+  if (req.params.id === req.profile.college_id) return res.status(400).json({ error: "You can't delete your own institution" });
+  const c = must(await db.from("colleges").select("id,name").eq("id", req.params.id).maybeSingle());
+  if (!c) return res.status(404).json({ error: "Institution not found" });
+  const accounts = await countOf(db.from("profiles").select("id", { count: "exact", head: true }).eq("college_id", c.id));
+  if (accounts) return res.status(400).json({ error: `${c.name} has ${accounts} account${accounts > 1 ? "s" : ""}, so it can't be deleted. Switch it off instead to hide it from sign-up.` });
+  const { error } = await db.from("colleges").delete().eq("id", c.id);
+  if (error) return res.status(400).json({ error: error.code === "23503" ? `${c.name} still has student records, so it can't be deleted. Switch it off instead.` : error.message });
+  must(await db.from("audit_logs").insert({ actor_id: req.user.id, action: "delete_institution", target_type: "college", target_id: c.id, details: { name: c.name } }));
+  res.json({ ok: true });
+}));
+
 app.post("/api/super/institutions/:id/admin", auth, superAdmin, wrap(async (req, res) => {
   const email = String(req.body.email || "").trim().toLowerCase();
   const p = must(await db.from("profiles").select("id,college_id,role").eq("email", email).maybeSingle());
