@@ -308,15 +308,18 @@ async function payScreen(y) {
   $("app").innerHTML = `<h2>Activate your year</h2><div class="card"><h1>₹${f ? f.amount : "-"}</h1><p class="mute">Includes XP tracking, badges, challenges, leaderboards and your annual certificate.</p>
   <p><b>Choose how to pay</b></p>
   <div class="paygrid">
-    <button class="payopt" onclick="pay('upi')"><span>📱</span><b>UPI app</b><small>${phone ? "Google Pay, PhonePe, Paytm…" : "Opens a QR code to scan with your phone"}</small></button>
+    <button class="payopt" onclick="pay('upi')"><span>📱</span><b>UPI app</b><small>${phone ? "Google Pay, PhonePe, Paytm…" : "Pay with UPI from your phone"}</small></button>
     <button class="payopt" onclick="pay('qr')"><span>🔳</span><b>Scan QR code</b><small>Scan with any UPI app</small></button>
     <button class="payopt o" onclick="pay('other')"><span>💳</span><b>Card / Net banking</b><small>Debit or credit card, net banking, wallets</small></button>
   </div><p id="msg"></p><p class="mute" style="font-size:.8rem">🔒 Payments are processed securely by Razorpay. GreenXP never sees your card or UPI PIN.</p></div>`;
 }
-// Razorpay Checkout opens on the chosen method: UPI apps and QR (UPI ID "collect" is deprecated by NPCI), QR only, or everything.
+// Razorpay Checkout opens with the chosen method listed first. The other methods stay available underneath
+// (show_default_blocks: true): if a UPI flow isn't offered on this device or account (e.g. app "intent" on a
+// computer, or QR in test mode), Checkout must still have something to show instead of "No appropriate payment method".
+// The UPI block names no flows, so Razorpay offers whichever UPI options work here.
 const PAY_DISPLAY = {
-  upi: { blocks: { upi: { name: "Pay with UPI", instruments: [{ method: "upi", flows: ["intent", "qr"] }] } }, sequence: ["block.upi"], preferences: { show_default_blocks: false } },
-  qr: { blocks: { qr: { name: "Scan & pay with any UPI app", instruments: [{ method: "upi", flows: ["qr"] }] } }, sequence: ["block.qr"], preferences: { show_default_blocks: false } },
+  upi: { blocks: { upi: { name: "Pay with UPI", instruments: [{ method: "upi" }] } }, sequence: ["block.upi"], preferences: { show_default_blocks: true } },
+  qr: { blocks: { qr: { name: "Scan & pay with any UPI app", instruments: [{ method: "upi", flows: ["qr"] }] } }, sequence: ["block.qr"], preferences: { show_default_blocks: true } },
   other: null
 };
 async function pay(method = "other") {
