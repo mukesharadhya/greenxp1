@@ -76,10 +76,30 @@ async function init() {
 async function authScreen() {
   $("tabs").hidden = true;
   const { data: cs } = await db.from("colleges").select("id,name");
-  $("app").innerHTML = `<h1>🌱 GreenXP</h1><p class="mute">Earn XP. Go Green. Make an Impact.</p><div class="card">
+  $("app").innerHTML = `<h1>🌱 GreenXP</h1><p class="mute">Earn XP. Go Green. Make an Impact.</p><div class="stats" id="counters"></div><div class="card">
   <label>College</label><select id="col">${(cs||[]).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select>
   <label>Full name (sign-up only)</label><input id="nm"><label>Email</label><input id="em" type="email"><label>Password</label><input id="pw" type="password">
   <div class="row"><button onclick="signup()">Sign up</button><button class="o" onclick="login()">Log in</button></div><p id="msg"></p></div>`;
+  showCounters();
+}
+// Live totals on the login page, counting up from zero.
+const fmtKg = kg => kg >= 1000 ? `${(kg / 1000).toFixed(kg >= 1e4 ? 0 : 1)} t` : `${kg >= 10 ? Math.round(kg) : kg.toFixed(1)} kg`;
+async function showCounters() {
+  const { data: s } = await db.rpc("public_stats");
+  const box = $("counters");
+  if (!s || !box) return;
+  const items = [["🏫", "Institutions registered", s.institutions, n => Math.round(n).toLocaleString("en-IN")],
+                 ["🎓", "Students registered", s.students, n => Math.round(n).toLocaleString("en-IN")],
+                 ["⭐", "Activities completed", s.activities, n => Math.round(n).toLocaleString("en-IN")],
+                 ["🌍", "Carbon footprint reduced (CO₂e)", +s.co2e_saved_kg, fmtKg]];
+  box.innerHTML = items.map(([icon, label], i) => `<div class="stat"><span>${icon}</span><b id="ct${i}">0</b><span class="mute" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.04em">${label}</span></div>`).join("");
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches, t0 = performance.now(), ms = 1200;
+  const step = now => {
+    const p = still ? 1 : Math.min(1, (now - t0) / ms), ease = 1 - Math.pow(1 - p, 3);
+    items.forEach(([, , v, f], i) => { const el = $("ct" + i); if (el) el.textContent = f(v * ease); });
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 async function signup() {
   const { error } = await db.auth.signUp({ email: $("em").value, password: $("pw").value, options: { data: { full_name: $("nm").value, college_id: $("col").value } } });
