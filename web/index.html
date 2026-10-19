@@ -775,9 +775,18 @@ const TEMPLATE_COLS = ["Institution name", "City", "State", "Pincode", "Yearly f
 async function downloadTemplate() {
   try {
     await loadXLSX();
-    const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_COLS, ["RV College of Engineering", "Bengaluru", "Karnataka", "560059", 199]]);
+    const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_COLS]);
     ws["!cols"] = [{ wch: 42 }, { wch: 16 }, { wch: 18 }, { wch: 10 }, { wch: 11 }];
-    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Institutions");
+    const help = XLSX.utils.aoa_to_sheet([["How to fill in the Institutions sheet"], [],
+      ["Institution name", "Required. Full official name, e.g. RV College of Engineering"],
+      ["City", "Required, e.g. Bengaluru"],
+      ["State", "Required. An Indian state or union territory, spelt out, e.g. Karnataka"],
+      ["Pincode", "Required. 6 digits, e.g. 560059"],
+      ["Yearly fee", "Optional. Membership fee in rupees; ₹199 if left empty"], [],
+      ["One institution per row, up to 500 rows. You can fix any problems in the preview before saving."]]);
+    help["!cols"] = [{ wch: 18 }, { wch: 70 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Institutions"); XLSX.utils.book_append_sheet(wb, help, "Instructions");
     XLSX.writeFile(wb, "greenxp-institutions-template.xlsx");
   } catch (e) { $("bmsg").className = "err"; $("bmsg").textContent = e.message; }
 }
@@ -786,7 +795,7 @@ const HEADERS = { name: ["institution name", "institution", "name", "college nam
   state: ["state", "state/ut", "state / ut"], pincode: ["pincode", "pin code", "pin", "postal code", "zip"], fee: ["yearly fee", "fee", "annual fee", "membership fee"] };
 const STATE_ALIASES = { orissa: "Odisha", "new delhi": "Delhi", "nct of delhi": "Delhi", pondicherry: "Puducherry", "j&k": "Jammu and Kashmir",
   "jammu & kashmir": "Jammu and Kashmir", "andaman & nicobar islands": "Andaman and Nicobar Islands", uttaranchal: "Uttarakhand", tamilnadu: "Tamil Nadu" };
-const normState = s => { const k = String(s || "").trim().toLowerCase(); return INDIAN_STATES.find(x => x.toLowerCase() === k) || STATE_ALIASES[k] || null; };
+const normState = s => { const k = String(s || "").trim().toLowerCase(); return INDIAN_STATES.find(x => x.toLowerCase() === k) || STATE_ALIASES[k] || ""; };
 async function readSheet(file) {
   const m = $("bmsg");
   if (!file) return;
@@ -795,54 +804,95 @@ async function readSheet(file) {
     await loadXLSX();
     const wb = XLSX.read(await file.arrayBuffer());
     const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "", raw: false });
-    if (!raw.length) throw new Error("The first sheet is empty.");
+    if (!raw.length) throw new Error("The first sheet has no rows under the headings.");
     const keys = Object.keys(raw[0]), col = {};
     for (const [field, names] of Object.entries(HEADERS)) col[field] = keys.find(k => names.includes(k.trim().toLowerCase()));
     const missing = ["name", "city", "state", "pincode"].filter(f => !col[f]);
     if (missing.length) throw new Error(`Couldn't find these columns: ${missing.map(f => HEADERS[f][0]).join(", ")}. Use the template's headings.`);
     if (raw.length > 500) throw new Error(`The file has ${raw.length} rows; upload at most 500 at a time.`);
-    const existing = new Set(instList.map(c => c.name.trim().toLowerCase())), seen = new Set();
     bulkRows = raw.map((r, i) => {
-      const v = { line: i + 2, name: String(r[col.name]).trim(), city: String(r[col.city]).trim(), stateIn: String(r[col.state]).trim(),
-        pincode: String(r[col.pincode]).replace(/\s/g, ""), fee: col.fee && String(r[col.fee]).trim() !== "" ? Number(String(r[col.fee]).replace(/[₹,\s]/g, "")) : 199 };
-      v.state = normState(v.stateIn);
-      const key = v.name.toLowerCase(), problems = [];
-      if (!v.name) problems.push("name missing");
-      if (!v.city) problems.push("city missing");
-      if (!v.state) problems.push(v.stateIn ? `"${v.stateIn}" isn't an Indian state/UT` : "state missing");
-      if (!/^[1-9][0-9]{5}$/.test(v.pincode)) problems.push(v.pincode ? `pincode "${v.pincode}" isn't 6 digits` : "pincode missing");
-      if (!(v.fee >= 0)) problems.push("fee isn't a number");
-      if (v.name && existing.has(key)) problems.push("already exists");
-      else if (v.name && seen.has(key)) problems.push("repeated in this file");
-      seen.add(key);
-      v.problem = problems.join("; ");
-      return v;
+      const stateIn = String(r[col.state]).trim();
+      return { line: i + 2, name: String(r[col.name]).trim(), city: String(r[col.city]).trim(), stateIn, state: normState(stateIn),
+        pincode: String(r[col.pincode]).replace(/\s/g, ""), fee: col.fee ? String(r[col.fee]).replace(/[₹,\s]/g, "") : "" };
     }).filter(v => v.name || v.city || v.stateIn || v.pincode); // skip fully blank lines
+    if (!bulkRows.length) throw new Error("The file has headings but no institutions under them.");
     renderBulk();
   } catch (e) { m.className = "err"; m.textContent = e.message; }
 }
-function renderBulk() {
-  const ok = bulkRows.filter(r => !r.problem && !r.result), bad = bulkRows.filter(r => r.problem);
-  const done = bulkRows.filter(r => r.result === "created").length;
-  $("bmsg").className = bad.length ? "err" : "mute";
-  $("bmsg").textContent = done ? `✅ ${done} institution${done > 1 ? "s" : ""} added.${bad.length ? ` ${bad.length} row${bad.length > 1 ? "s" : ""} not added (see below).` : ""}`
-    : `${ok.length} row${ok.length === 1 ? "" : "s"} ready to import${bad.length ? `, ${bad.length} with problems (they'll be skipped; fix them in the file and upload again)` : ""}.`;
-  $("bq").innerHTML = `<div class="tbl" style="max-height:360px;overflow:auto"><table><thead><tr><th>Row</th><th>Institution</th><th>City</th><th>State</th><th>Pincode</th><th class="n">Fee</th><th>Status</th></tr></thead><tbody>` +
-    bulkRows.map(r => `<tr><td class="mute">${r.line}</td><td>${esc(r.name)}</td><td>${esc(r.city)}</td><td>${esc(r.state || r.stateIn)}</td><td>${esc(r.pincode)}</td><td class="n">${Number.isFinite(r.fee) ? "₹" + r.fee : ""}</td>
-      <td>${r.result === "created" ? "✅ Added" : r.problem ? `<span class="err" style="font-weight:400">❌ ${esc(r.problem)}</span>` : "✔ Ready"}</td></tr>`).join("") +
-    `</tbody></table></div>` + (ok.length ? `<p><button onclick="importBulk(this)">Import ${ok.length} institution${ok.length > 1 ? "s" : ""}</button> <button class="o" onclick="bulkRows=[];$('bq').innerHTML='';$('bmsg').textContent=''">Cancel</button></p>` : "");
+// Re-checks every row that isn't saved yet: required fields, pincode, state, fee, and duplicates.
+function validateBulk() {
+  const existing = new Set(instList.map(c => c.name.trim().toLowerCase())), seen = new Set();
+  for (const r of bulkRows) {
+    if (r.result === "created") continue;
+    const key = r.name.trim().toLowerCase(), p = [];
+    if (!r.name.trim()) p.push("name missing");
+    if (!r.city.trim()) p.push("city missing");
+    if (!r.state) p.push(r.stateIn ? `"${r.stateIn}" isn't an Indian state/UT – pick one` : "state missing");
+    if (!/^[1-9][0-9]{5}$/.test(r.pincode)) p.push(r.pincode ? "pincode must be 6 digits" : "pincode missing");
+    if (r.fee !== "" && !(+r.fee >= 0)) p.push("fee must be a number");
+    if (key && existing.has(key)) p.push("already exists");
+    else if (key && seen.has(key)) p.push("repeated in this file");
+    if (key) seen.add(key);
+    if (r.serverError) p.push(r.serverError);
+    r.problem = p.join("; ");
+  }
 }
-async function importBulk(btn) {
-  const ok = bulkRows.filter(r => !r.problem && !r.result);
-  if (!confirm(`Add ${ok.length} institution${ok.length > 1 ? "s" : ""}? Each gets this year's calendar, activities and certificate rules.`)) return;
-  btn.disabled = true; btn.textContent = "Importing…";
+const cell = (i, f, v, attrs = "") => `<input value="${esc(v)}" ${attrs} oninput="editBulk(${i},'${f}',this.value)" aria-label="${f} for row ${i + 1}" style="margin:0;padding:.35rem .5rem;min-width:0">`;
+function renderBulk() {
+  validateBulk();
+  const bar = id => `<div class="row" style="justify-content:flex-start;flex-wrap:wrap;margin:.5rem 0"><button id="${id}" onclick="saveBulk(this)"></button>
+    <button class="o" onclick="cancelBulk()">Cancel</button></div>`;
+  $("bq").innerHTML = bar("bsave1") + `<div class="tbl" style="max-height:420px;overflow:auto"><table><thead><tr><th>Row</th><th>Institution name</th><th>City</th><th>State</th><th>Pincode</th><th>Fee (₹)</th><th>Status</th><th></th></tr></thead><tbody>` +
+    bulkRows.map((r, i) => r.result === "created"
+      ? `<tr><td class="mute">${r.line}</td><td>${esc(r.name)}</td><td>${esc(r.city)}</td><td>${esc(r.state)}</td><td>${esc(r.pincode)}</td><td>${r.fee === "" ? 199 : esc(r.fee)}</td><td>✅ Saved</td><td></td></tr>`
+      : `<tr><td class="mute">${r.line}</td><td style="min-width:220px">${cell(i, "name", r.name)}</td><td>${cell(i, "city", r.city, 'list="citylist"')}</td>
+        <td><select onchange="editBulk(${i},'state',this.value)" aria-label="state for row ${i + 1}" style="margin:0;padding:.35rem .5rem">
+          <option value="">${r.stateIn && !r.state ? "⚠ " + esc(r.stateIn) : "Select…"}</option>${INDIAN_STATES.map(s => `<option${s === r.state ? " selected" : ""}>${s}</option>`).join("")}</select></td>
+        <td>${cell(i, "pincode", r.pincode, 'inputmode="numeric" maxlength="6" style="width:7.5em"')}</td><td>${cell(i, "fee", r.fee, 'inputmode="numeric" placeholder="199" style="width:5.5em"')}</td>
+        <td id="bs_${i}" style="white-space:normal;min-width:160px"></td>
+        <td><button class="s o" onclick="bulkRows.splice(${i},1);renderBulk()" aria-label="Remove row ${r.line}" title="Remove this row">✕</button></td></tr>`).join("") +
+    `</tbody></table></div>` + bar("bsave2");
+  updateBulkStatus();
+}
+function editBulk(i, field, value) {
+  const r = bulkRows[i];
+  r[field] = field === "pincode" ? value.replace(/\s/g, "") : value;
+  if (field === "state") r.stateIn = value;
+  r.serverError = "";
+  validateBulk(); updateBulkStatus();
+}
+// Updates the status column, summary and Save buttons without redrawing the inputs (so typing isn't interrupted).
+function updateBulkStatus() {
+  bulkRows.forEach((r, i) => { const s = $("bs_" + i); if (s) s.innerHTML = r.problem ? `<span class="err" style="font-weight:400">❌ ${esc(r.problem)}</span>` : "✔ Ready"; });
+  const ready = bulkRows.filter(r => !r.problem && r.result !== "created").length, bad = bulkRows.filter(r => r.problem).length;
+  const saved = bulkRows.filter(r => r.result === "created").length;
+  $("bmsg").className = bad ? "err" : "mute";
+  $("bmsg").textContent = (saved ? `✅ ${saved} saved. ` : "") + (ready || bad
+    ? `${ready} ready to save${bad ? `, ${bad} need fixing – edit them below or remove them with ✕` : ""}.` : "All done.");
+  for (const id of ["bsave1", "bsave2"]) {
+    const b = $(id); if (!b) continue;
+    b.disabled = !ready;
+    b.textContent = ready ? `💾 Save ${ready} institution${ready > 1 ? "s" : ""}` : bad ? "💾 Save (fix the rows marked ❌ first)" : "💾 Nothing left to save";
+  }
+}
+function cancelBulk() {
+  if (bulkRows.some(r => r.result !== "created") && !confirm("Discard this upload? Rows that aren't saved yet will be lost.")) return;
+  bulkRows = []; $("bq").innerHTML = ""; $("bmsg").textContent = "";
+}
+async function saveBulk(btn) {
+  const ready = bulkRows.filter(r => !r.problem && r.result !== "created");
+  if (!ready.length) return;
+  if (!confirm(`Save ${ready.length} institution${ready.length > 1 ? "s" : ""}? Each gets this year's calendar, activities and certificate rules, and appears in the sign-up list.`)) return;
+  document.querySelectorAll("#bsave1,#bsave2").forEach(b => { b.disabled = true; b.textContent = "Saving…"; });
   try {
-    const r = await api("/api/super/institutions/bulk", { rows: ok.map(({ name, city, state, pincode, fee }) => ({ name, city, state, pincode, fee })) });
-    r.results.forEach((res, i) => { if (res.ok) ok[i].result = "created"; else ok[i].problem = res.error; });
+    const r = await api("/api/super/institutions/bulk", { rows: ready.map(({ name, city, state, pincode, fee }) =>
+      ({ name: name.trim(), city: city.trim(), state, pincode, fee: fee === "" ? 199 : +fee })) });
+    r.results.forEach((res, i) => { if (res.ok) ready[i].result = "created"; else ready[i].serverError = res.error; });
     const keep = bulkRows;
-    await institutionsView();
+    await institutionsView(); // refresh the institutions table, then bring the upload preview back
     bulkRows = keep; renderBulk();
-  } catch (e) { btn.disabled = false; btn.textContent = "Try again"; $("bmsg").className = "err"; $("bmsg").textContent = e.message; }
+    $("bq").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (e) { $("bmsg").className = "err"; $("bmsg").textContent = e.message; updateBulkStatus(); }
 }
 async function deleteInst(id) {
   const c = instList.find(x => x.id === id);
