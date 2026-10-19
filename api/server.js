@@ -99,6 +99,18 @@ app.post("/api/payments/create-order", auth, approved, wrap(async (req, res) => 
   res.json({ orderId: o.id, amount: o.amount, currency: o.currency, keyId: RAZORPAY_KEY_ID });
 }));
 
+// Which payment methods the Razorpay account has switched on, so the pay screen only offers ones that work.
+// Uses Razorpay's public methods lookup (key id only); cached for 10 minutes.
+let methodsCache = { at: 0, data: null };
+app.get("/api/payments/methods", wrap(async (req, res) => {
+  if (Date.now() - methodsCache.at > 6e5) {
+    const r = await fetch(`https://api.razorpay.com/v1/methods?key_id=${encodeURIComponent(RAZORPAY_KEY_ID)}`);
+    const m = r.ok ? await r.json() : null;
+    methodsCache = { at: Date.now(), data: m && { upi: !!m.upi, card: !!m.card, netbanking: !!(m.netbanking && Object.keys(m.netbanking).length), wallet: !!(m.wallet && Object.values(m.wallet).some(Boolean)) } };
+  }
+  res.json(methodsCache.data || { upi: true, card: true, netbanking: true, wallet: true }); // unknown: don't block anything
+}));
+
 app.post("/api/payments/verify", auth, wrap(async (req, res) => {
   const { razorpay_order_id: o, razorpay_payment_id: p, razorpay_signature: s } = req.body;
   if (!same(hmac(RAZORPAY_KEY_SECRET, `${o}|${p}`), s)) return res.status(400).json({ error: "Invalid payment signature" });

@@ -305,13 +305,16 @@ async function analysisScreen() {
 async function payScreen(y) {
   const { data: f } = y ? await db.from("fee_settings").select("amount,currency").eq("college_id", me.college_id).eq("academic_year_id", y.id).eq("active", true).maybeSingle() : { data: null };
   const phone = matchMedia("(pointer: coarse)").matches; // UPI apps open directly on phones; on computers a QR code is shown
+  // Only offer UPI if the Razorpay account has it switched on; otherwise grey it out and point to card / net banking.
+  const methods = await fetch(GXP.API_URL + "/api/payments/methods").then(r => r.json()).catch(() => ({ upi: true }));
+  const upiOff = methods.upi === false, off = upiOff ? ` disabled title="UPI isn't available yet"` : "";
   $("app").innerHTML = `<h2>Activate your year</h2><div class="card"><h1>₹${f ? f.amount : "-"}</h1><p class="mute">Includes XP tracking, badges, challenges, leaderboards and your annual certificate.</p>
   <p><b>Choose how to pay</b></p>
   <div class="paygrid">
-    <button class="payopt" onclick="pay('upi')"><span>📱</span><b>UPI app</b><small>${phone ? "Google Pay, PhonePe, Paytm…" : "Pay with UPI from your phone"}</small></button>
-    <button class="payopt" onclick="pay('qr')"><span>🔳</span><b>Scan QR code</b><small>Scan with any UPI app</small></button>
-    <button class="payopt o" onclick="pay('other')"><span>💳</span><b>Card / Net banking</b><small>Debit or credit card, net banking, wallets</small></button>
-  </div><p id="msg"></p><p class="mute" style="font-size:.8rem">🔒 Payments are processed securely by Razorpay. GreenXP never sees your card or UPI PIN.</p></div>`;
+    <button class="payopt${upiOff ? " o" : ""}" onclick="pay('upi')"${off}><span>📱</span><b>UPI app</b><small>${upiOff ? "Coming soon" : phone ? "Google Pay, PhonePe, Paytm…" : "Pay with UPI from your phone"}</small></button>
+    <button class="payopt${upiOff ? " o" : ""}" onclick="pay('qr')"${off}><span>🔳</span><b>Scan QR code</b><small>${upiOff ? "Coming soon" : "Scan with any UPI app"}</small></button>
+    <button class="payopt${upiOff ? "" : " o"}" onclick="pay('other')"><span>💳</span><b>Card / Net banking</b><small>Debit or credit card, net banking, wallets</small></button>
+  </div>${upiOff ? `<p class="warn">UPI payments aren't available yet. Please pay by card, net banking or wallet for now.</p>` : ""}<p id="msg"></p><p class="mute" style="font-size:.8rem">🔒 Payments are processed securely by Razorpay. GreenXP never sees your card or UPI PIN.</p></div>`;
 }
 // Razorpay Checkout opens with the chosen method listed first. The other methods stay available underneath
 // (show_default_blocks: true): if a UPI flow isn't offered on this device or account (e.g. app "intent" on a
@@ -323,8 +326,8 @@ const PAY_DISPLAY = {
   other: null
 };
 async function pay(method = "other") {
-  const btns = document.querySelectorAll(".payopt");
-  if ([...btns].some(b => b.disabled)) return;
+  const btns = [...document.querySelectorAll(".payopt")].filter(b => !b.title); // leave unavailable options as they are
+  if (btns.some(b => b.disabled)) return;
   btns.forEach(b => b.disabled = true); say("Starting payment…");
   try {
     const o = await api("/api/payments/create-order");
