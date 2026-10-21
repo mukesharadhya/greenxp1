@@ -122,6 +122,22 @@ app.post("/api/payments/verify", auth, wrap(async (req, res) => {
 // so parallel requests cannot get past the frequency limit.
 app.post("/api/submissions", auth, approved, wrap(async (req, res) => {
   const p = req.profile, { activityId, proofPath, eventCode } = req.body;
+  // Extra questions some activities ask (e.g. walk or cycle, and distance): every answer is required and checked here.
+  const act = typeof activityId === "string" && /^[0-9a-f-]{36}$/i.test(activityId)
+    ? must(await db.from("activities").select("inputs").eq("id", activityId).maybeSingle()) : null;
+  const details = {};
+  for (const q of act?.inputs || []) {
+    const v = req.body.details?.[q.key];
+    if (q.type === "choice") {
+      if (!q.options.includes(v)) return res.status(400).json({ error: `Please answer: ${q.label}` });
+      details[q.key] = v;
+    } else if (q.type === "number") {
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < (q.min ?? 0) || n > (q.max ?? 1e6))
+        return res.status(400).json({ error: `${q.label}: enter a number between ${q.min ?? 0} and ${q.max ?? 1e6}` });
+      details[q.key] = Math.round(n * 100) / 100;
+    }
+  }
   let proofHash = null;
   if (proofPath) {
     // Students may only attach photos from their own folder; the hash is computed here because the browser's can't be trusted.
@@ -134,6 +150,7 @@ app.post("/api/submissions", auth, approved, wrap(async (req, res) => {
   const { data, error } = await db.rpc("submit_activity", { p_user: p.id, p_activity: activityId, p_proof_path: proofPath || null,
     p_proof_hash: proofHash, p_event_code: eventCode == null ? null : String(eventCode) });
   if (error) return res.status(400).json({ error: error.message });
+  if (Object.keys(details).length && data?.id) must(await db.from("activity_submissions").update({ details }).eq("id", data.id));
   res.json(data);
 }));
 
@@ -145,7 +162,7 @@ app.post("/api/rewards/:id/redeem", auth, approved, wrap(async (req, res) => {
 }));
 
 // 4. Admin dashboard. Submissions reference profiles twice (student and reviewer), so each embed names its foreign key.
-const SUB_COLS = "id,submitted_at,proof_path,proof_hash,verification_status,rejection_reason,verified_at," +
+const SUB_COLS = "id,submitted_at,proof_path,proof_hash,verification_status,rejection_reason,verified_at,details," +
   "activities(name,category,xp_value,verification_type)," +
   "student:profiles!activity_submissions_user_id_fkey!inner(id,full_name,usn,department,year,college_id)," +
   "reviewer:profiles!activity_submissions_verified_by_fkey(full_name)";

@@ -52,6 +52,8 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 .paygrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.6rem;margin-bottom:.6rem}
 .payopt{display:flex;flex-direction:column;align-items:flex-start;gap:.15rem;text-align:left;padding:.8rem}
 .payopt span{font-size:1.5rem}.payopt small{font-weight:400;font-size:.8rem;opacity:.9}
+.chip{display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .9rem;border:2px solid var(--line);border-radius:99px;cursor:pointer;font-weight:700}
+.chip input{width:auto;margin:0}.chip:has(input:checked){border-color:var(--pri);background:color-mix(in srgb,var(--pri) 18%,transparent)}
 .actdet{margin-top:.6rem;padding-top:.6rem;border-top:1px dashed var(--line)}.actdet p{margin:.2rem 0 .6rem}.chev{font-size:1.2rem}
 .err{color:#b3261e;font-weight:700}.bar{height:12px;background:var(--line);border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pri)}
 </style></head>
@@ -421,9 +423,36 @@ async function earn() {
     <div class="row" role="button" tabindex="0" aria-expanded="false" onclick="openAct('${esc(a.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAct('${esc(a.id)}')}" style="cursor:pointer">
       <div><b>${esc(a.name)}</b><br><span class="mute">${esc(a.category)} · ${a.frequency_limit} per ${a.frequency_period} · ${HOW[a.verification_type] || ""}</span></div>
       <span style="white-space:nowrap"><span class="pill">+${a.xp_value}</span> <span class="mute chev">›</span></span></div>
-    <div class="actdet" hidden><p>📝 ${esc(a.description || "Complete this activity to earn XP.")}</p>
+    <div class="actdet" hidden><p>📝 ${esc(a.description || "Complete this activity to earn XP.")}</p>${actQuestions(a)}
       ${a.verification_type === "automatic" ? `<p class="mute">Nothing to submit – XP is added automatically.</p>`
         : `<button class="s" onclick="doAct('${esc(a.id)}')">${ACTION[a.verification_type] || "Go"}</button><p class="actmsg mute"></p>`}</div></div>`).join("");
+}
+// Extra questions an activity asks before submitting (activities.inputs), e.g. walk or cycle, and the distance.
+const CHOICE_ICON = { Walk: "🚶", Cycle: "🚲" };
+function actQuestions(a) {
+  return (a.inputs || []).map(q => {
+    const id = `q_${a.id}_${q.key}`;
+    return q.type === "choice"
+      ? `<p style="margin:.4rem 0 .3rem"><b>${esc(q.label)}</b></p><div class="row" style="justify-content:flex-start;flex-wrap:wrap;gap:.5rem;margin-bottom:.6rem" role="radiogroup" aria-label="${esc(q.label)}">` +
+        q.options.map(o => `<label class="chip"><input type="radio" name="${id}" value="${esc(o)}"> ${CHOICE_ICON[o] || ""} ${esc(o)}</label>`).join("") + `</div>`
+      : `<label for="${id}" style="display:block"><b>${esc(q.label)}</b></label><input id="${id}" type="number" inputmode="decimal" step="0.1" min="${q.min ?? 0}" max="${q.max ?? ""}" placeholder="e.g. 3.5" style="max-width:11rem">`;
+  }).join("");
+}
+function readAnswers(a) {
+  const out = {};
+  for (const q of a.inputs || []) {
+    const id = `q_${a.id}_${q.key}`;
+    if (q.type === "choice") {
+      const picked = document.querySelector(`input[name="${id}"]:checked`);
+      if (!picked) return `Please choose: ${q.label}`;
+      out[q.key] = picked.value;
+    } else {
+      const n = parseFloat($(id).value);
+      if (!(n >= (q.min ?? 0) && n <= (q.max ?? Infinity))) return `${q.label}: enter a number between ${q.min ?? 0} and ${q.max ?? "any"}.`;
+      out[q.key] = n;
+    }
+  }
+  return out;
 }
 function openAct(id) {
   document.querySelectorAll(".card.act").forEach(c => {
@@ -438,6 +467,11 @@ async function doAct(id) {
   if (!a) return;
   try {
     const body = { activityId: a.id };
+    if ((a.inputs || []).length) { // answer the activity's questions before choosing a photo
+      const ans = readAnswers(a);
+      if (typeof ans === "string") return actSay(id, ans, 1);
+      body.details = ans;
+    }
     if (a.verification_type === "qr_event") {
       body.eventCode = prompt("Enter the event code");
       if (body.eventCode == null) return;
@@ -445,7 +479,8 @@ async function doAct(id) {
     if (["photo", "photo_admin"].includes(a.verification_type)) {
       const f = await new Promise(r => { const i = document.createElement("input"); i.type = "file"; i.accept = "image/*"; i.capture = "environment"; i.onchange = () => r(i.files[0]); i.oncancel = () => r(null); i.click(); });
       if (!f) return;
-      if (f.size > 10 * 1024 * 1024) return say("That photo is over 10 MB. Please pick a smaller one.", 1);
+      if (f.size > 10 * 1024 * 1024) return actSay(id, "That photo is over 10 MB. Please pick a smaller one.", 1);
+      actSay(id, "Uploading your photo…");
       const ext = ({ "image/png": "png", "image/webp": "webp", "image/heic": "heic", "image/heif": "heif" })[f.type] || "jpg";
       body.proofPath = `${me.id}/${crypto.randomUUID()}.${ext}`;
       const up = await db.storage.from("proofs").upload(body.proofPath, f, { contentType: f.type });
@@ -797,11 +832,14 @@ function userTable(list, pending) {
 }
 const reviewButtons = id => `<div class="row" style="margin-top:.6rem">${checkbox(`onchange="toggleSel('${id}',this.checked)"${adminSel.has(id) ? " checked" : ""}`, "Select")}
   <span><button class="s" onclick="reviewMany(true,['${id}'])">Approve</button> <button class="s o" onclick="reviewMany(false,['${id}'])">Reject</button></span></div>`;
+// The student's answers to an activity's questions, e.g. "🚲 Cycle · 4.5 km".
+const subDetails = d => Object.entries(d).map(([k, v]) => k === "km" ? `${v} km` : k === "mode" ? `${CHOICE_ICON[v] || ""} ${v}`.trim() : `${k}: ${v}`).join(" · ");
 function subCard(s, pending) {
   const st = s.student, a = s.activities;
   return `<div class="card">
   ${s.proof_url ? `<img class="proof" src="${esc(s.proof_url)}" alt="Proof photo for ${esc(a.name)}" onclick="zoom(this.src)">` : `<div class="noproof mute">No photo</div>`}
   <div class="row"><b>${esc(a.name)}</b><span class="pill">+${a.xp_value}</span></div>
+  ${s.details && Object.keys(s.details).length ? `<div style="margin:.2rem 0 .3rem;font-weight:700">${esc(subDetails(s.details))}</div>` : ""}
   <span class="mute">${esc(st.full_name || "Student")} · ${esc(st.usn || "no USN")}${st.department ? " · " + esc(st.department) : ""}${st.year ? " · Year " + st.year : ""}</span><br>
   <span class="mute">Submitted ${ago(s.submitted_at)}${s.history ? ` · history: ${s.history.approved} approved, ${s.history.rejected} rejected` : ""}</span>
   ${s.duplicate ? `<div class="warn">⚠ This photo was also used in ${s.duplicate.count} other submission${s.duplicate.count > 1 ? "s" : ""}${s.duplicate.otherStudent ? ", including another student's" : ""}.</div>` : ""}
