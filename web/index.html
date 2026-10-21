@@ -52,6 +52,7 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 .paygrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.6rem;margin-bottom:.6rem}
 .payopt{display:flex;flex-direction:column;align-items:flex-start;gap:.15rem;text-align:left;padding:.8rem}
 .payopt span{font-size:1.5rem}.payopt small{font-weight:400;font-size:.8rem;opacity:.9}
+.actdet{margin-top:.6rem;padding-top:.6rem;border-top:1px dashed var(--line)}.actdet p{margin:.2rem 0 .6rem}.chev{font-size:1.2rem}
 .err{color:#b3261e;font-weight:700}.bar{height:12px;background:var(--line);border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pri)}
 </style></head>
 <body><div class="app" id="app">Loading…</div><nav class="tabs" id="tabs" hidden></nav>
@@ -404,8 +405,24 @@ async function earn() {
     $("app").innerHTML = `<h2>Earn XP</h2><p class="${error ? "err" : "mute"}">${error ? "Could not load activities. Please refresh or log in again." : "No activities yet. Check back soon."}</p>`;
     return;
   }
-  $("app").innerHTML = `<h2>Earn XP</h2><p id="msg" class="mute"></p>` + data.map(a => `<div class="card row"><div><b>${esc(a.name)}</b><br><span class="mute">${esc(a.category)} · ${a.frequency_limit} per ${a.frequency_period} · ${({self:"instant",photo:"photo",photo_admin:"photo + admin",qr_event:"event code",automatic:"automatic"})[a.verification_type]}</span></div>
-  ${a.verification_type==="automatic" ? '<span class="mute">Auto</span>' : `<span><span class="pill">+${a.xp_value}</span> <button class="s" onclick="doAct('${esc(a.id)}')">Go</button></span>`}</div>`).join("");
+  // Tapping an activity opens its one-line instruction and the right button for how it's checked.
+  const ACTION = { photo: "📷 Upload photo", photo_admin: "📷 Upload photo", self: "✅ Mark as done", qr_event: "🔑 Enter event code" };
+  const HOW = { self: "instant XP", photo: "photo · approved by admin", photo_admin: "photo · approved by admin", qr_event: "event code", automatic: "automatic" };
+  $("app").innerHTML = `<h2>Earn XP</h2><p class="mute">Tap an activity to see what to do.</p><p id="msg" class="mute"></p>` + data.map(a => `<div class="card act" id="ac_${esc(a.id)}">
+    <div class="row" role="button" tabindex="0" aria-expanded="false" onclick="openAct('${esc(a.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAct('${esc(a.id)}')}" style="cursor:pointer">
+      <div><b>${esc(a.name)}</b><br><span class="mute">${esc(a.category)} · ${a.frequency_limit} per ${a.frequency_period} · ${HOW[a.verification_type] || ""}</span></div>
+      <span style="white-space:nowrap"><span class="pill">+${a.xp_value}</span> <span class="mute chev">›</span></span></div>
+    <div class="actdet" hidden><p>📝 ${esc(a.description || "Complete this activity to earn XP.")}</p>
+      ${a.verification_type === "automatic" ? `<p class="mute">Nothing to submit – XP is added automatically.</p>`
+        : `<button class="s" onclick="doAct('${esc(a.id)}')">${ACTION[a.verification_type] || "Go"}</button><p class="actmsg mute"></p>`}</div></div>`).join("");
+}
+function openAct(id) {
+  document.querySelectorAll(".card.act").forEach(c => {
+    const open = c.id === "ac_" + id && c.querySelector(".actdet").hidden;
+    c.querySelector(".actdet").hidden = !open;
+    c.querySelector("[aria-expanded]").setAttribute("aria-expanded", open);
+    c.querySelector(".chev").textContent = open ? "⌄" : "›";
+  });
 }
 async function doAct(id) {
   const a = acts[id];
@@ -426,8 +443,14 @@ async function doAct(id) {
       if (up.error) throw up.error;
     }
     const r = await api("/api/submissions", body);
-    say(r.xp ? `+${r.xp} XP!` : "Sent. XP arrives once an admin verifies it.");
-  } catch (e) { say(e.message, 1); }
+    actSay(id, r.xp ? `🎉 +${r.xp} XP!` : "✅ Sent! XP arrives once an admin approves your photo.");
+  } catch (e) { actSay(id, e.message, 1); }
+}
+// Shows the result inside the activity's card (where the student is looking) and at the top of the page.
+function actSay(id, m, bad) {
+  say(m, bad);
+  const el = document.querySelector(`#ac_${id} .actmsg`);
+  if (el) { el.textContent = m; el.className = "actmsg " + (bad ? "err" : "mute"); }
 }
 // ---- Activity logging and the footprint dashboard ----
 // fields: [id, label, options | "number", default]; event categories are dated once, the others cover a period.
