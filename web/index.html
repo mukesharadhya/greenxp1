@@ -64,7 +64,10 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script>
+// Opened from a password-reset email? Note it before Supabase reads and clears the link's #access_token…&type=recovery.
+let recovering = /type=recovery/.test(location.hash);
 const db = supabase.createClient(GXP.SUPABASE_URL, GXP.SUPABASE_KEY);
+db.auth.onAuthStateChange(ev => { if (ev === "PASSWORD_RECOVERY") { recovering = true; newPasswordScreen(); } });
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
 const LV = [[0,"Eco Starter","🌱"],[100,"Green Rookie","🍃"],[300,"Green Warrior","🌿"],[600,"Eco Champion","🌳"],[1000,"Planet Hero","🌎"],[2000,"Eco Legend","🏆"]];
@@ -82,7 +85,13 @@ const currentYear = async () => (await db.from("academic_years").select("id").eq
 
 async function init() {
   const { data: { session } } = await db.auth.getSession();
-  if (!session) return authScreen();
+  if (session && recovering) return newPasswordScreen();
+  if (!session) {
+    const linkError = new URLSearchParams(location.hash.slice(1)).get("error_description");
+    await authScreen();
+    if (linkError) { history.replaceState(null, "", location.pathname); say(`That email link didn't work (${linkError}). Use “Forgot password?” to get a new one.`, 1); }
+    return;
+  }
   me = (await db.from("profiles").select("*").eq("id", session.user.id).maybeSingle()).data;
   if (!me) {
     $("tabs").hidden = true;
@@ -115,7 +124,8 @@ async function authScreen() {
     <label for="nm">Full name</label><input id="nm" autocomplete="name"></div>
   <label for="em">Email</label><input id="em" type="email" autocomplete="email">
   <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password">
-  <p><button id="go" onclick="login()">Log in</button></p><p id="msg"></p>
+  <p class="row" style="flex-wrap:wrap"><button id="go" onclick="login()">Log in</button>
+    <a href="#" id="forgot" onclick="forgotPassword();return false" style="color:var(--prid);font-weight:700">Forgot password?</a></p><p id="msg"></p>
   <p id="su_note" class="mute" hidden>Can't find your institution? Ask your college to contact the GreenXP team.</p></div>`;
   pickInst(0);
   showCounters();
@@ -139,6 +149,7 @@ function pickInst(changed) {
 function authMode(m) {
   const up = m === "signup";
   $("su").hidden = $("su_note").hidden = !up;
+  $("forgot").hidden = up;
   $("m_login").className = up ? "o" : ""; $("m_signup").className = up ? "" : "o";
   $("pw").autocomplete = up ? "new-password" : "current-password";
   $("go").textContent = up ? "Create account" : "Log in"; $("go").onclick = up ? signup : login;
@@ -180,6 +191,34 @@ async function signup() {
 async function login() {
   const { error } = await db.auth.signInWithPassword({ email: $("em").value, password: $("pw").value });
   error ? say(error.message, 1) : init();
+}
+// Emails a reset link that opens this page; the link brings the student to newPasswordScreen().
+async function forgotPassword() {
+  const email = $("em").value.trim();
+  if (!/^\S+@\S+\.\S+$/.test(email)) return say("Type your email above, then click “Forgot password?” again.", 1);
+  const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+  if (error) return say(/rate limit/i.test(error.message) ? "Too many emails were sent just now. Please try again in an hour." : error.message, 1);
+  say(`If ${email} has a GreenXP account, a reset link is on its way. Open it on this device to choose a new password.`);
+}
+function newPasswordScreen() {
+  $("tabs").hidden = true;
+  $("app").innerHTML = `<h1>🌱 GreenXP</h1><div class="card"><h2>Choose a new password</h2>
+  <label for="np1">New password</label><input id="np1" type="password" autocomplete="new-password">
+  <label for="np2">Type it again</label><input id="np2" type="password" autocomplete="new-password">
+  <p><button id="npgo" onclick="saveNewPassword()">Save new password</button></p><p id="msg"></p></div>`;
+}
+async function saveNewPassword() {
+  const p1 = $("np1").value, p2 = $("np2").value;
+  if (p1.length < 6) return say("Use at least 6 characters.", 1);
+  if (p1 !== p2) return say("The two passwords don't match.", 1);
+  $("npgo").disabled = true;
+  const { error } = await db.auth.updateUser({ password: p1 });
+  $("npgo").disabled = false;
+  if (error) return say(/session|jwt|expired/i.test(error.message) ? "This reset link has expired. Go back to Log in and use “Forgot password?” again." : error.message, 1);
+  recovering = false;
+  history.replaceState(null, "", location.pathname);
+  say("✅ Password changed. Taking you in…");
+  setTimeout(init, 1200);
 }
 function profileScreen() {
   $("tabs").hidden = true;
