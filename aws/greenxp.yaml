@@ -1,0 +1,526 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  GreenXP on AWS: one public EC2 server (Elastic IP, Caddy with Let's Encrypt HTTPS) serves the site and proxies
+  /api/* to the Node API on the same machine; PostgreSQL on RDS in private subnets, sign-in with Cognito, uploads
+  in S3, secrets in Secrets Manager.
+
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@3
+  com.aws.cloudformation.Context:
+    why: Lean (~USD 25/month) replacement for Render + Supabase for a small college app with Indian users.
+    must:
+      - The database stays in private subnets and accepts connections only from the server.
+      - The server exposes only ports 80 and 443; it is managed through SSM, with no SSH.
+      - Secrets never appear in this template or its parameters; they live in Secrets Manager.
+
+Parameters:
+  DomainName:
+    Type: String
+    Description: The site's address (an A record pointing at the Elastic IP); Caddy gets its HTTPS certificate for it.
+  ApiEipAllocationId:
+    Type: String
+    Description: Elastic IP allocated outside the stack, so the address (and the DNS record) survives server replacement and stack rebuilds.
+  DbInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+  ApiInstanceType:
+    Type: String
+    Default: t4g.micro
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+    Description: Amazon Linux 2023 (arm64). A newer image replaces the server on the next stack update.
+  VpcCidr:
+    Type: String
+    Default: 10.20.0.0/16
+
+Resources:
+  # ---------- Network ----------
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{ Key: Name, Value: !Ref AWS::StackName }]
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: { VpcId: !Ref Vpc, InternetGatewayId: !Ref InternetGateway }
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Select [0, !Cidr [!Ref VpcCidr, 16, 8]]
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true # internet from first boot, before the Elastic IP is attached
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-public" }]
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Select [10, !Cidr [!Ref VpcCidr, 16, 8]]
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-private-a" }]
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Select [11, !Cidr [!Ref VpcCidr, 16, 8]]
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-private-b" }]
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: { VpcId: !Ref Vpc }
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties: { RouteTableId: !Ref PublicRouteTable, DestinationCidrBlock: 0.0.0.0/0, GatewayId: !Ref InternetGateway }
+  PublicSubnetRoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref PublicSubnet, RouteTableId: !Ref PublicRouteTable }
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: { VpcId: !Ref Vpc } # no internet route: only the database lives here
+  PrivateSubnetARoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref PrivateSubnetA, RouteTableId: !Ref PrivateRouteTable }
+  PrivateSubnetBRoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref PrivateSubnetB, RouteTableId: !Ref PrivateRouteTable }
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Free gateway endpoint; S3 traffic (uploads, deploy bundles, OS packages) stays inside AWS.
+    Properties:
+      VpcId: !Ref Vpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      RouteTableIds: [!Ref PrivateRouteTable, !Ref PublicRouteTable]
+
+  # ---------- Database ----------
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: GreenXP database - Postgres from the API server only
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 5432, ToPort: 5432, SourceSecurityGroupId: !Ref ApiSecurityGroup, Description: API server }
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: GreenXP private subnets
+      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Single-AZ db.t4g.micro is enough for a few thousand students; daily backups kept 7 days.
+        must:
+          - Not publicly accessible; only the API security group may connect.
+          - The master password is managed and rotated by RDS in Secrets Manager; the API reads it per connection.
+    Properties:
+      Engine: postgres
+      EngineVersion: "17"
+      DBInstanceClass: !Ref DbInstanceClass
+      AllocatedStorage: "20"
+      MaxAllocatedStorage: 100
+      StorageType: gp3
+      StorageEncrypted: true
+      DBName: greenxp
+      MasterUsername: greenxp_admin
+      ManageMasterUserPassword: true
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VPCSecurityGroups: [!Ref DbSecurityGroup]
+      PubliclyAccessible: false
+      MultiAZ: false
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: "20:30-21:00"
+      PreferredMaintenanceWindow: "sun:21:30-sun:22:00"
+      AutoMinorVersionUpgrade: true
+      CopyTagsToSnapshot: true
+      DeletionProtection: true
+      EnableCloudwatchLogsExports: [postgresql]
+
+  # ---------- Secrets ----------
+  AppSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Razorpay and Anthropic keys are filled in by hand after the first deploy (see aws/README.md); the webhook secret is generated here.
+        must:
+          - Never put real key values in this template.
+    Properties:
+      Name: !Sub "${AWS::StackName}/app"
+      Description: GreenXP API secrets (Razorpay, Anthropic, one-off Supabase migration settings)
+      GenerateSecretString:
+        SecretStringTemplate: '{"RAZORPAY_KEY_ID":"","RAZORPAY_KEY_SECRET":"","ANTHROPIC_API_KEY":""}'
+        GenerateStringKey: RAZORPAY_WEBHOOK_SECRET
+        PasswordLength: 64
+        ExcludePunctuation: true
+
+  # ---------- Storage ----------
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Students' proof photos (proofs/) and bills (bills/), uploaded from the browser with forms the API signs.
+        must:
+          - CORS allows POST only from the site's own address.
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-uploads-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }]
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
+      VersioningConfiguration: { Status: Enabled }
+      LifecycleConfiguration:
+        Rules:
+          - { Id: tidy, Status: Enabled, NoncurrentVersionExpiration: { NoncurrentDays: 30 }, AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 } }
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [POST]
+            AllowedOrigins: [!Sub "https://${DomainName}"]
+            AllowedHeaders: ["*"]
+            MaxAge: 3000
+  UploadsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref UploadsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource: [!GetAtt UploadsBucket.Arn, !Sub "${UploadsBucket.Arn}/*"]
+            Condition: { Bool: { aws:SecureTransport: "false" } }
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: API release bundles (api/current.tgz) and one-off migration files that the API server pulls.
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }]
+      PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
+      OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
+      VersioningConfiguration: { Status: Enabled }
+      LifecycleConfiguration:
+        Rules: [{ Id: tidy, Status: Enabled, NoncurrentVersionExpiration: { NoncurrentDays: 30 } }]
+  ArtifactsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ArtifactsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource: [!GetAtt ArtifactsBucket.Arn, !Sub "${ArtifactsBucket.Arn}/*"]
+            Condition: { Bool: { aws:SecureTransport: "false" } }
+
+  # ---------- Sign-in ----------
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Email + password accounts with emailed codes for sign-up and password reset.
+        must:
+          - custom:college_id is read once, on a user's first sign-in, to create their profile.
+    Properties:
+      UserPoolName: !Sub "${AWS::StackName}-users"
+      UserPoolTier: LITE
+      DeletionProtection: ACTIVE
+      UsernameAttributes: [email]
+      UsernameConfiguration: { CaseSensitive: false }
+      AutoVerifiedAttributes: [email]
+      AccountRecoverySetting: { RecoveryMechanisms: [{ Name: verified_email, Priority: 1 }] }
+      Policies:
+        PasswordPolicy: { MinimumLength: 8, RequireLowercase: false, RequireUppercase: false, RequireNumbers: false, RequireSymbols: false, TemporaryPasswordValidityDays: 7 }
+      Schema:
+        - { Name: email, AttributeDataType: String, Required: true, Mutable: true }
+        - { Name: name, AttributeDataType: String, Required: false, Mutable: true }
+        - { Name: college_id, AttributeDataType: String, Mutable: true, StringAttributeConstraints: { MinLength: "36", MaxLength: "36" } }
+      EmailConfiguration: { EmailSendingAccount: COGNITO_DEFAULT }
+      VerificationMessageTemplate:
+        DefaultEmailOption: CONFIRM_WITH_CODE
+        EmailSubject: Your GreenXP code
+        EmailMessage: "Your GreenXP code is {####}. It expires in 24 hours."
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: web
+      GenerateSecret: false
+      ExplicitAuthFlows: [ALLOW_USER_PASSWORD_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      IdTokenValidity: 60
+      AccessTokenValidity: 60
+      RefreshTokenValidity: 30
+      TokenValidityUnits: { IdToken: minutes, AccessToken: minutes, RefreshToken: days }
+      ReadAttributes: [email, email_verified, name, custom:college_id]
+      WriteAttributes: [email, name, custom:college_id]
+
+
+  # ---------- Server (site + API) ----------
+  ApiSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: This is the public web server, so HTTP and HTTPS are open to everyone; nothing else is.
+        must:
+          - Never open 22, 3000 or 5432 here; manage the server with SSM Session Manager.
+    Properties:
+      GroupDescription: GreenXP server - HTTP/HTTPS from the internet
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: HTTPS }
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0, Description: HTTP for Lets Encrypt checks and redirect to HTTPS }
+      SecurityGroupEgress:
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: "HTTPS to AWS APIs, Razorpay, Anthropic, npm, Lets Encrypt" }
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0, Description: OS package mirrors }
+        - { IpProtocol: tcp, FromPort: 5432, ToPort: 5432, CidrIp: !Ref VpcCidr, Description: Database }
+        - { IpProtocol: tcp, FromPort: 5432, ToPort: 6543, CidrIp: 0.0.0.0/0, Description: Supabase pooler for the one-off migration }
+  ApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: [{ Effect: Allow, Principal: { Service: ec2.amazonaws.com }, Action: sts:AssumeRole }]
+      ManagedPolicyArns: [!Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"]
+      Policies:
+        - PolicyName: greenxp-api
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadSecrets
+                Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: [!Ref AppSecret, !GetAtt Database.MasterUserSecret.SecretArn]
+              - Sid: Uploads
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub "${UploadsBucket.Arn}/*"
+              - Sid: UploadsList
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt UploadsBucket.Arn
+              - Sid: Artifacts
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "${ArtifactsBucket.Arn}/*"
+              - Sid: ArtifactsList
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt ArtifactsBucket.Arn
+  ApiInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: { Roles: [!Ref ApiRole] }
+  ApiLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        MetadataOptions: { HttpTokens: required, HttpPutResponseHopLimit: 1 }
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs: { VolumeSize: 10, VolumeType: gp3, Encrypted: true, DeleteOnTermination: true }
+  ApiInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: [PublicDefaultRoute, PublicSubnetRoutes]
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: One small server runs Caddy (HTTPS, static site) and the Express API under systemd; it holds no data, so replacing it is safe.
+        must:
+          - On boot it installs the latest api/current.tgz and site/current.tgz from the artifacts bucket, so a replacement comes back on its own.
+          - The API listens on 127.0.0.1 only; Caddy is the only way in.
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref ApiInstanceType
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds: [!Ref ApiSecurityGroup]
+      IamInstanceProfile: !Ref ApiInstanceProfile
+      LaunchTemplate: { LaunchTemplateId: !Ref ApiLaunchTemplate, Version: !GetAtt ApiLaunchTemplate.LatestVersionNumber }
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-server" }]
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+          # 1 GB swap: npm needs more memory than a t4g.micro has spare
+          if [ ! -f /swapfile ]; then
+            dd if=/dev/zero of=/swapfile bs=1M count=1024; chmod 600 /swapfile; mkswap /swapfile; swapon /swapfile
+            echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
+          fi
+          for i in $(seq 1 30); do dnf install -y nodejs22 nodejs22-npm postgresql17 jq && break; sleep 10; done
+          command -v node || ln -s /usr/bin/node-22 /usr/bin/node
+          command -v npm || ln -s /usr/bin/npm-22 /usr/bin/npm
+          mkdir -p /opt/greenxp/site
+          curl -fsSL --retry 10 --retry-all-errors https://truststore.pki.rds.amazonaws.com/${AWS::Region}/${AWS::Region}-bundle.pem -o /opt/greenxp/rds-ca.pem
+          id greenxp || useradd --system --home-dir /opt/greenxp --shell /sbin/nologin greenxp
+
+          # Caddy: HTTPS with automatic Let's Encrypt certificates, static site, proxy to the API. Pinned and checksum-checked.
+          CADDY=2.10.2
+          cd /tmp
+          curl -fsSL --retry 10 -o caddy.tgz https://github.com/caddyserver/caddy/releases/download/v$CADDY/caddy_"$CADDY"_linux_arm64.tar.gz
+          curl -fsSL --retry 10 -o caddy.sums https://github.com/caddyserver/caddy/releases/download/v$CADDY/caddy_"$CADDY"_checksums.txt
+          grep " caddy_"$CADDY"_linux_arm64.tar.gz$" caddy.sums | awk '{print $1"  caddy.tgz"}' | sha512sum -c -
+          tar -xzf caddy.tgz caddy && install -m 755 caddy /usr/local/bin/caddy
+          id caddy || useradd --system --home-dir /var/lib/caddy --create-home --shell /sbin/nologin caddy
+          mkdir -p /etc/caddy
+          cat > /etc/caddy/Caddyfile <<'EOS'
+          ${DomainName} {
+            encode zstd gzip
+            header {
+              Strict-Transport-Security "max-age=31536000"
+              X-Content-Type-Options nosniff
+              Referrer-Policy strict-origin-when-cross-origin
+              X-Frame-Options DENY
+            }
+            handle /api/* {
+              reverse_proxy 127.0.0.1:3000
+            }
+            handle {
+              root * /opt/greenxp/site
+              @fresh path / /index.html /config.js
+              header @fresh Cache-Control no-cache
+              file_server
+            }
+          }
+          EOS
+          cat > /etc/systemd/system/caddy.service <<'EOS'
+          [Unit]
+          Description=Caddy (HTTPS for GreenXP)
+          After=network-online.target
+          Wants=network-online.target
+          [Service]
+          User=caddy
+          Group=caddy
+          Environment=XDG_DATA_HOME=/var/lib XDG_CONFIG_HOME=/etc
+          ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+          ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --force
+          AmbientCapabilities=CAP_NET_BIND_SERVICE
+          CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+          NoNewPrivileges=true
+          ProtectSystem=full
+          Restart=on-failure
+          [Install]
+          WantedBy=multi-user.target
+          EOS
+
+          cat > /etc/greenxp.env <<EOF
+          AWS_REGION=${AWS::Region}
+          NODE_ENV=production
+          HOST=127.0.0.1
+          PORT=3000
+          DB_HOST=${Database.Endpoint.Address}
+          DB_NAME=greenxp
+          DB_SECRET_ARN=${Database.MasterUserSecret.SecretArn}
+          APP_SECRET_ARN=${AppSecret}
+          UPLOADS_BUCKET=${UploadsBucket}
+          ARTIFACTS_BUCKET=${ArtifactsBucket}
+          COGNITO_USER_POOL_ID=${UserPool}
+          COGNITO_CLIENT_ID=${UserPoolClient}
+          EOF
+          chmod 644 /etc/greenxp.env
+
+          cat > /usr/local/bin/greenxp-deploy <<'EOS'
+          #!/bin/bash
+          # Installs the API bundle from the artifacts bucket and restarts the service; prints /health.
+          set -euo pipefail
+          source /etc/greenxp.env
+          rm -rf /opt/greenxp/next && mkdir -p /opt/greenxp/next
+          aws s3 cp "s3://$ARTIFACTS_BUCKET/api/current.tgz" - --region "$AWS_REGION" | tar -xz -C /opt/greenxp/next
+          cd /opt/greenxp/next && HOME=/root npm ci --omit=dev --no-audit --no-fund --loglevel=error
+          rm -rf /opt/greenxp/previous
+          if [ -d /opt/greenxp/app ]; then mv /opt/greenxp/app /opt/greenxp/previous; fi
+          mv /opt/greenxp/next /opt/greenxp/app
+          systemctl restart greenxp
+          for i in $(seq 1 20); do curl -fsS 127.0.0.1:3000/health && exit 0; sleep 2; done
+          journalctl -u greenxp -n 40 --no-pager; exit 1
+          EOS
+
+          cat > /usr/local/bin/greenxp-deploy-site <<'EOS'
+          #!/bin/bash
+          # Replaces the site with the bundle from the artifacts bucket (Caddy serves it straight away).
+          set -euo pipefail
+          source /etc/greenxp.env
+          rm -rf /opt/greenxp/site.next && mkdir -p /opt/greenxp/site.next
+          aws s3 cp "s3://$ARTIFACTS_BUCKET/site/current.tgz" - --region "$AWS_REGION" | tar -xz -C /opt/greenxp/site.next
+          chmod -R a+rX /opt/greenxp/site.next
+          rm -rf /opt/greenxp/site.old && mv /opt/greenxp/site /opt/greenxp/site.old && mv /opt/greenxp/site.next /opt/greenxp/site
+          echo "site updated: $(ls /opt/greenxp/site | tr '\n' ' ')"
+          EOS
+
+          cat > /usr/local/bin/greenxp-psql <<'EOS'
+          #!/bin/bash
+          # psql to the GreenXP database as its admin user, e.g.: sudo greenxp-psql -c "select count(*) from profiles"
+          source /etc/greenxp.env
+          S=$(aws secretsmanager get-secret-value --secret-id "$DB_SECRET_ARN" --query SecretString --output text --region "$AWS_REGION")
+          PGPASSWORD=$(jq -r .password <<<"$S") exec psql "host=$DB_HOST dbname=$DB_NAME user=$(jq -r .username <<<"$S") sslmode=verify-full sslrootcert=/opt/greenxp/rds-ca.pem" "$@"
+          EOS
+          chmod 755 /usr/local/bin/greenxp-deploy /usr/local/bin/greenxp-deploy-site /usr/local/bin/greenxp-psql
+
+          cat > /etc/systemd/system/greenxp.service <<'EOS'
+          [Unit]
+          Description=GreenXP API
+          After=network-online.target
+          Wants=network-online.target
+          [Service]
+          User=greenxp
+          EnvironmentFile=/etc/greenxp.env
+          WorkingDirectory=/opt/greenxp/app
+          ExecStart=/usr/bin/node server.js
+          Restart=always
+          RestartSec=5
+          NoNewPrivileges=true
+          ProtectSystem=strict
+          ProtectHome=true
+          PrivateTmp=true
+          [Install]
+          WantedBy=multi-user.target
+          EOS
+          systemctl daemon-reload
+          systemctl enable greenxp
+          systemctl enable --now caddy
+          if aws s3 ls "s3://${ArtifactsBucket}/api/current.tgz" --region ${AWS::Region}; then /usr/local/bin/greenxp-deploy || true; fi
+          if aws s3 ls "s3://${ArtifactsBucket}/site/current.tgz" --region ${AWS::Region}; then /usr/local/bin/greenxp-deploy-site || true; fi
+  ApiAddress:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !Ref ApiEipAllocationId
+      InstanceId: !Ref ApiInstance
+
+Outputs:
+  SiteUrl:
+    Value: !Sub "https://${DomainName}"
+  ArtifactsBucket:
+    Value: !Ref ArtifactsBucket
+  UploadsBucket:
+    Value: !Ref UploadsBucket
+  CognitoUserPoolId:
+    Value: !Ref UserPool
+  CognitoClientId:
+    Value: !Ref UserPoolClient
+  ApiInstanceId:
+    Value: !Ref ApiInstance
+  DatabaseEndpoint:
+    Value: !GetAtt Database.Endpoint.Address
+  AppSecretArn:
+    Value: !Ref AppSecret

@@ -66,58 +66,89 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 <dialog id="lo" aria-labelledby="lo_t"><form method="dialog"><h3 id="lo_t">Log out?</h3><p class="mute">Are you sure you want to log out of GreenXP?</p>
   <div class="row"><button value="cancel" class="o" autofocus>Stay logged in</button><button value="ok">Log out</button></div></form></dialog>
 <script src="config.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script>
-// Opened from a password-reset email? Note it before Supabase reads and clears the link's #access_token…&type=recovery.
-let recovering = /type=recovery/.test(location.hash);
-const db = supabase.createClient(GXP.SUPABASE_URL, GXP.SUPABASE_KEY);
-db.auth.onAuthStateChange(ev => { if (ev === "PASSWORD_RECOVERY") { recovering = true; newPasswordScreen(); } });
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
 const LV = [[0,"Eco Starter","🌱"],[100,"Green Rookie","🍃"],[300,"Green Warrior","🌿"],[600,"Eco Champion","🌳"],[1000,"Planet Hero","🌎"],[2000,"Eco Legend","🏆"]];
 let me = null, tab = "home", acts = {};
-async function api(path, body, method = "POST") {
-  const { data: { session } } = await db.auth.getSession();
-  if (!session) throw new Error("Your session has expired. Please log in again.");
-  const r = await fetch(GXP.API_URL + path, { method, headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token }, body: body ? JSON.stringify(body) : undefined });
+// ---- Sign-in with Amazon Cognito: a direct call to its public API, no SDK needed ----
+async function idp(action, body) {
+  const r = await fetch(`https://cognito-idp.${GXP.COGNITO_REGION}.amazonaws.com/`, { method: "POST",
+    headers: { "Content-Type": "application/x-amz-json-1.1", "X-Amz-Target": "AWSCognitoIdentityProviderService." + action },
+    body: JSON.stringify({ ClientId: GXP.COGNITO_CLIENT_ID, ...body }) });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || "Request failed");
+  if (!r.ok) throw Object.assign(new Error(j.message || "Something went wrong. Please try again."), { code: String(j.__type || "").split("#").pop() });
   return j;
 }
+// The session (ID token for the API, refresh token to renew it) is kept in this browser, as Supabase did.
+let session = (() => { try { return JSON.parse(localStorage.getItem("gxp_session")); } catch { return null; } })();
+function keepSession(a, refresh) {
+  session = { id: a.IdToken, refresh: a.RefreshToken || refresh, exp: Date.now() + (a.ExpiresIn - 60) * 1000 };
+  try { localStorage.setItem("gxp_session", JSON.stringify(session)); } catch {}
+}
+function dropSession() { session = null; try { localStorage.removeItem("gxp_session"); } catch {} }
+async function signIn(email, password) {
+  keepSession((await idp("InitiateAuth", { AuthFlow: "USER_PASSWORD_AUTH", AuthParameters: { USERNAME: email.trim().toLowerCase(), PASSWORD: password } })).AuthenticationResult);
+}
+async function idToken() {
+  if (!session) return null;
+  if (Date.now() < session.exp) return session.id;
+  try { keepSession((await idp("InitiateAuth", { AuthFlow: "REFRESH_TOKEN_AUTH", AuthParameters: { REFRESH_TOKEN: session.refresh } })).AuthenticationResult, session.refresh); }
+  catch { dropSession(); return null; }
+  return session.id;
+}
+async function api(path, body, method = "POST") {
+  const token = await idToken();
+  if (!token) throw new Error("Your session has expired. Please log in again.");
+  const r = await fetch(GXP.API_URL + path, { method, headers: { "Content-Type": "application/json", Authorization: "Bearer " + token }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(j.error || "Request failed"), { status: r.status });
+  return j;
+}
+// Pages anyone can see (sign-up list, counters, certificate check) need no sign-in.
+const pub = path => fetch(GXP.API_URL + path).then(r => r.ok ? r.json() : null).catch(() => null);
+// Photos and bills go straight to storage with a short-lived upload form from the API.
+async function upload(bucket, file) {
+  const u = await api("/api/uploads", { bucket, contentType: file.type || "image/jpeg" });
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(u.fields)) fd.append(k, v);
+  fd.append("file", file); // must come last
+  const r = await fetch(u.url, { method: "POST", body: fd });
+  if (!r.ok) throw new Error("Upload failed. Please try again with a file under 10 MB.");
+  return u.path;
+}
 const say = (m, bad) => { const e = $("msg"); if (e) { e.textContent = m; e.className = bad ? "err" : "mute"; } };
-const currentYear = async () => (await db.from("academic_years").select("id").eq("college_id", me.college_id).eq("is_current", true).maybeSingle()).data;
 
 async function init() {
-  const { data: { session } } = await db.auth.getSession();
-  if (session && recovering) return newPasswordScreen();
-  if (!session) {
-    const linkError = new URLSearchParams(location.hash.slice(1)).get("error_description");
-    await authScreen();
-    if (linkError) { history.replaceState(null, "", location.pathname); say(`That email link didn't work (${linkError}). Use “Forgot password?” to get a new one.`, 1); }
-    return;
-  }
-  me = (await db.from("profiles").select("*").eq("id", session.user.id).maybeSingle()).data;
-  if (!me) {
+  if (!session) return authScreen();
+  let r;
+  try { r = await api("/api/me", null, "GET"); }
+  catch (e) {
+    if (e.status === 403) {
+      $("tabs").hidden = true;
+      $("app").innerHTML = `<div class="card"><p>Your account is still being set up.</p><button onclick="init()">Try again</button> <button class="o" onclick="logout()">Log out</button></div>`;
+      return;
+    }
+    if (e.status === 401 || !session) { dropSession(); return authScreen(); }
     $("tabs").hidden = true;
-    $("app").innerHTML = `<div class="card"><p>Your account is still being set up.</p><button onclick="init()">Try again</button> <button class="o" onclick="logout()">Log out</button></div>`;
+    $("app").innerHTML = `<div class="card"><p class="err">${esc(e.message)}</p><button onclick="init()">Try again</button></div>`;
     return;
   }
+  me = r.profile;
   // Admins manage the college and go straight to their dashboard; the onboarding steps below are for students.
   if (["admin", "super_admin"].includes(me.role)) { $("tabs").hidden = false; return show("admin"); }
   if (!me.usn || !me.department) return profileScreen();
   if (me.approval_status !== "approved") return approvalScreen();
-  me.survey = (await db.from("lifestyle_surveys").select("*").eq("user_id", me.id).maybeSingle()).data;
+  me.survey = r.survey;
   if (!me.survey) return surveyScreen();
   // Only a membership for the current academic year unlocks the app.
-  const y = await currentYear();
-  const { data: m } = y ? await db.from("memberships").select("status").eq("user_id", me.id).eq("academic_year_id", y.id).in("status", ["active", "waived"]).limit(1) : { data: null };
-  if (!m || !m.length) return payScreen(y);
+  if (!r.member) return payScreen(r.year);
   $("tabs").hidden = false; show("home");
 }
 async function authScreen() {
   $("tabs").hidden = true;
-  insts = (await db.from("colleges").select("id,name,city,state,pincode").eq("active", true).order("name")).data || [];
+  insts = await pub("/api/public/colleges") || [];
   $("app").innerHTML = `<h1>🌱 GreenXP</h1><p class="mute">Earn XP. Go Green. Make an Impact.</p><div class="stats" id="counters"></div><div class="card">
   <div class="row" style="justify-content:flex-start;margin-bottom:.8rem"><button id="m_login" onclick="authMode('login')">Log in</button><button id="m_signup" class="o" onclick="authMode('signup')">Sign up</button></div>
   <div id="su" hidden>
@@ -163,7 +194,7 @@ function authMode(m) {
 // Live totals on the login page, counting up from zero.
 const fmtKg = kg => kg >= 1000 ? `${(kg / 1000).toFixed(kg >= 1e4 ? 0 : 1)} t` : `${kg >= 10 ? Math.round(kg) : kg.toFixed(1)} kg`;
 async function showCounters() {
-  const { data: s } = await db.rpc("public_stats");
+  const s = await pub("/api/public/stats");
   const box = $("counters");
   if (!s || !box) return;
   const count = n => Math.round(n).toLocaleString("en-IN");
@@ -185,50 +216,91 @@ async function showCounters() {
 async function signup() {
   if (!$("col").value) return say("Select your institution.", 1);
   if (!$("nm").value.trim()) return say("Enter your full name.", 1);
-  if ($("pw").value.length < 6) return say("Use a password of at least 6 characters.", 1);
-  const { data, error } = await db.auth.signUp({ email: $("em").value.trim(), password: $("pw").value,
-    options: { data: { full_name: $("nm").value.trim(), college_id: $("col").value } } });
-  if (error) return say(error.message, 1);
-  if (data.session) return init(); // email confirmation is off: straight in
-  authMode("login");
-  say("Account created. Check your inbox to confirm your email, then log in.");
+  if ($("pw").value.length < 8) return say("Use a password of at least 8 characters.", 1);
+  const email = $("em").value.trim().toLowerCase(), password = $("pw").value;
+  try {
+    await idp("SignUp", { Username: email, Password: password, UserAttributes: [{ Name: "email", Value: email },
+      { Name: "name", Value: $("nm").value.trim() }, { Name: "custom:college_id", Value: $("col").value }] });
+  } catch (e) { return say(e.message, 1); }
+  codeScreen(email, password);
+}
+// After signing up (or logging in before confirming), the student types the code emailed to them.
+function codeScreen(email, password) {
+  $("tabs").hidden = true;
+  $("app").innerHTML = `<h1>🌱 GreenXP</h1><div class="card"><h2>Check your email</h2>
+  <p>We sent a 6-digit code to <b>${esc(email)}</b>. Enter it to confirm your account.</p>
+  <label for="cc">Code</label><input id="cc" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+  <p class="row" style="flex-wrap:wrap"><button id="ccgo">Confirm</button><a href="#" id="ccre" style="color:var(--prid);font-weight:700">Send a new code</a></p>
+  <p id="msg"></p><p><button class="o s" onclick="authScreen()">Back to log in</button></p></div>`;
+  $("ccgo").onclick = async () => {
+    $("ccgo").disabled = true;
+    try {
+      await idp("ConfirmSignUp", { Username: email, ConfirmationCode: $("cc").value.trim() });
+      await signIn(email, password);
+      init();
+    } catch (e) { $("ccgo").disabled = false; say(e.message, 1); }
+  };
+  $("ccre").onclick = async ev => {
+    ev.preventDefault();
+    try { await idp("ResendConfirmationCode", { Username: email }); say("A new code is on its way."); } catch (e) { say(e.message, 1); }
+  };
 }
 // Every log-out button asks first.
 function logout() {
   const d = $("lo");
   d.returnValue = "";
-  d.onclose = async () => { if (d.returnValue === "ok") { await db.auth.signOut(); init(); } };
+  d.onclose = () => {
+    if (d.returnValue !== "ok") return;
+    const refresh = session?.refresh;
+    dropSession();
+    if (refresh) idp("RevokeToken", { Token: refresh }).catch(() => {});
+    init();
+  };
   d.showModal();
 }
 async function login() {
-  const { error } = await db.auth.signInWithPassword({ email: $("em").value, password: $("pw").value });
-  error ? say(error.message, 1) : init();
+  const email = $("em").value.trim().toLowerCase(), password = $("pw").value;
+  try { await signIn(email, password); }
+  catch (e) {
+    if (e.code === "UserNotConfirmedException") {
+      await idp("ResendConfirmationCode", { Username: email }).catch(() => {});
+      return codeScreen(email, password);
+    }
+    return say(e.message, 1);
+  }
+  init();
 }
-// Emails a reset link that opens this page; the link brings the student to newPasswordScreen().
+// Emails a 6-digit code; newPasswordScreen() takes the code and the new password.
 async function forgotPassword() {
-  const email = $("em").value.trim();
+  const email = $("em").value.trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(email)) return say("Type your email above, then click “Forgot password?” again.", 1);
-  const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
-  if (error) return say(/rate limit/i.test(error.message) ? "Too many emails were sent just now. Please try again in an hour." : error.message, 1);
-  say(`If ${email} has a GreenXP account, a reset link is on its way. Open it on this device to choose a new password.`);
+  try { await idp("ForgotPassword", { Username: email }); }
+  catch (e) { return say(e.code === "LimitExceededException" ? "Too many attempts just now. Please try again in a while." : e.message, 1); }
+  newPasswordScreen(email);
 }
-function newPasswordScreen() {
+function newPasswordScreen(email) {
   $("tabs").hidden = true;
   $("app").innerHTML = `<h1>🌱 GreenXP</h1><div class="card"><h2>Choose a new password</h2>
+  <p class="mute">If ${esc(email)} has a GreenXP account, we've emailed it a 6-digit code.</p>
+  <label for="rc">Code from the email</label><input id="rc" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
   <label for="np1">New password</label><input id="np1" type="password" autocomplete="new-password">
   <label for="np2">Type it again</label><input id="np2" type="password" autocomplete="new-password">
-  <p><button id="npgo" onclick="saveNewPassword()">Save new password</button></p><p id="msg"></p></div>`;
+  <p><button id="npgo">Save new password</button></p><p id="msg"></p><p><button class="o s" onclick="authScreen()">Back to log in</button></p></div>`;
+  $("npgo").onclick = () => saveNewPassword(email);
 }
-async function saveNewPassword() {
-  const p1 = $("np1").value, p2 = $("np2").value;
-  if (p1.length < 6) return say("Use at least 6 characters.", 1);
+async function saveNewPassword(email) {
+  const code = $("rc").value.trim(), p1 = $("np1").value, p2 = $("np2").value;
+  if (!code) return say("Enter the code from the email.", 1);
+  if (p1.length < 8) return say("Use at least 8 characters.", 1);
   if (p1 !== p2) return say("The two passwords don't match.", 1);
   $("npgo").disabled = true;
-  const { error } = await db.auth.updateUser({ password: p1 });
-  $("npgo").disabled = false;
-  if (error) return say(/session|jwt|expired/i.test(error.message) ? "This reset link has expired. Go back to Log in and use “Forgot password?” again." : error.message, 1);
-  recovering = false;
-  history.replaceState(null, "", location.pathname);
+  try {
+    await idp("ConfirmForgotPassword", { Username: email, ConfirmationCode: code, Password: p1 });
+    await signIn(email, p1);
+  } catch (e) {
+    $("npgo").disabled = false;
+    return say(e.code === "ExpiredCodeException" ? "This code has expired. Go back to Log in and use “Forgot password?” again." : e.message, 1);
+  }
   say("✅ Password changed. Taking you in…");
   setTimeout(init, 1200);
 }
@@ -243,9 +315,8 @@ function profileScreen() {
 }
 async function saveProfile() {
   if (!$("usn").value.trim() || !$("ok").checked) return say("Add your USN and accept the terms.", 1);
-  const { error } = await db.from("profiles").update({ usn: $("usn").value.trim(), department: $("dep").value, year: +$("yr").value, phone: $("ph").value }).eq("id", me.id);
-  if (error) return say(error.code === "23505" ? "That USN is already registered. Check it, or contact your college admin." : error.message, 1);
-  if (me.approval_status === "rejected") await db.rpc("request_reapproval");
+  try { await api("/api/me/profile", { usn: $("usn").value.trim(), department: $("dep").value, year: +$("yr").value, phone: $("ph").value }); }
+  catch (e) { return say(e.message, 1); }
   init();
 }
 function approvalScreen() {
@@ -330,17 +401,15 @@ async function saveSurvey() {
   for (const [, qs] of SURVEY) for (const [id] of qs) a[id] = $("q_" + id).value;
   if (Object.values(a).some(v => !v)) return say("Please answer every question.", 1);
   const f = footprint(a), total = Object.values(f).reduce((x, y) => x + y, 0);
-  const { data, error } = await db.from("lifestyle_surveys")
-    .upsert({ user_id: me.id, answers: a, footprint: f, total_kg: total, updated_at: new Date().toISOString() }).select().single();
-  if (error) return say(error.message, 1);
-  me.survey = data;
+  try { me.survey = await api("/api/me/survey", { answers: a, footprint: f, total_kg: total }, "PUT"); }
+  catch (e) { return say(e.message, 1); }
   analysisScreen();
 }
 async function analysisScreen() {
   const f = me.survey.footprint, t = me.survey.total_kg / 1000;
   const max = Math.max(1, ...Object.keys(CATS).map(k => f[k]));
   const top = Object.keys(CATS).sort((x, y) => f[y] - f[x]).slice(0, 2);
-  const { data: acts } = await db.from("activities").select("name,category,xp_value").eq("active", true).in("category", top.flatMap(k => CATS[k].acts));
+  const acts = await activitiesIn(top.flatMap(k => CATS[k].acts));
   const diff = Math.round((t / INDIA_AVG_T - 1) * 100);
   const cmp = Math.abs(diff) < 10 ? `About the same as India's average of ${INDIA_AVG_T} t per person.`
     : `${Math.abs(diff)}% ${diff > 0 ? "above" : "below"} India's average of ${INDIA_AVG_T} t per person.`;
@@ -353,8 +422,10 @@ async function analysisScreen() {
     <p><button onclick="init()">Continue</button> <button class="o" onclick="surveyScreen()">Retake questionnaire</button></p>`;
 }
 
+// Activities of the student's college in some categories, for the suggestions under the footprint.
+const activitiesIn = cats => api(`/api/activities?categories=${encodeURIComponent(cats.join(","))}`, null, "GET").catch(() => []);
 async function payScreen(y) {
-  const { data: f } = y ? await db.from("fee_settings").select("amount,currency").eq("college_id", me.college_id).eq("academic_year_id", y.id).eq("active", true).maybeSingle() : { data: null };
+  const f = y ? await api("/api/fee", null, "GET").catch(() => null) : null;
   const phone = matchMedia("(pointer: coarse)").matches; // UPI apps open directly on phones; on computers a QR code is shown
   // Only offer UPI if the Razorpay account has it switched on; otherwise grey it out and point to card / net banking.
   const methods = await fetch(GXP.API_URL + "/api/payments/methods").then(r => r.json()).catch(() => ({ upi: true }));
@@ -402,7 +473,7 @@ function show(t) {
   ({ home, earn, fp, ranks, cert, admin })[t]();
 }
 async function home() {
-  const { data } = await db.rpc("my_xp_summary"); const s = data && data[0] || { earned: 0, spendable: 0, year_earned: 0 };
+  const s = await api("/api/me/xp", null, "GET").catch(() => ({ earned: 0, spendable: 0, year_earned: 0 }));
   const e = +s.earned, l = [...LV].reverse().find(x => e >= x[0]), n = LV.find(x => x[0] > e), p = n ? Math.round((e - l[0]) / (n[0] - l[0]) * 100) : 100;
   $("app").innerHTML = `<h2>Hi ${esc((me.full_name||"").split(" ")[0])} ${l[2]}</h2><div class="card"><div class="row"><b style="font-size:1.8rem">${e} XP</b><span class="pill">${l[1]}</span></div>
   <div class="bar" style="margin:.6rem 0"><i style="width:${p}%"></i></div><span class="mute">${n ? n[0]-e+" XP to "+n[1] : "Top level"} · ${s.spendable} XP to spend · ${s.year_earned} XP this year</span></div>
@@ -410,8 +481,9 @@ async function home() {
   <p class="mute">GreenXP points are reward points, not carbon credits or money.</p>`;
 }
 async function earn() {
-  const { data, error } = await db.from("activities").select("*").eq("active", true).order("category");
-  acts = Object.fromEntries((data||[]).map(a => [a.id, a]));
+  let data = [], error = null;
+  try { data = await api("/api/activities", null, "GET"); } catch (e) { error = e; }
+  acts = Object.fromEntries(data.map(a => [a.id, a]));
   if (error || !data.length) {
     $("app").innerHTML = `<h2>Earn XP</h2><p class="${error ? "err" : "mute"}">${error ? "Could not load activities. Please refresh or log in again." : "No activities yet. Check back soon."}</p>`;
     return;
@@ -481,10 +553,7 @@ async function doAct(id) {
       if (!f) return;
       if (f.size > 10 * 1024 * 1024) return actSay(id, "That photo is over 10 MB. Please pick a smaller one.", 1);
       actSay(id, "Uploading your photo…");
-      const ext = ({ "image/png": "png", "image/webp": "webp", "image/heic": "heic", "image/heif": "heif" })[f.type] || "jpg";
-      body.proofPath = `${me.id}/${crypto.randomUUID()}.${ext}`;
-      const up = await db.storage.from("proofs").upload(body.proofPath, f, { contentType: f.type });
-      if (up.error) throw up.error;
+      body.proofPath = await upload("proofs", f);
     }
     const r = await api("/api/submissions", body);
     actSay(id, r.xp ? `🎉 +${r.xp} XP!` : "✅ Sent! XP arrives once an admin approves your photo.");
@@ -616,16 +685,16 @@ function advice(cat, e) {
   }
 }
 async function fp() {
-  const { data: logs, error } = await db.from("footprint_logs").select("*").eq("user_id", me.id)
-    .gte("period_end", iso(Date.now() - 364 * 864e5)).order("period_start", { ascending: false });
-  if (error) { $("app").innerHTML = `<h2>Your footprint</h2><p class="err">Could not load your data. Please refresh.</p>`; return; }
+  let logs;
+  try { logs = await api("/api/footprint-logs", null, "GET"); }
+  catch { $("app").innerHTML = `<h2>Your footprint</h2><p class="err">Could not load your data. Please refresh.</p>`; return; }
   const est = estimate(logs, me.survey ? baseline(me.survey.answers) : {});
   const total = Object.values(est).reduce((s, e) => s + e.kg, 0) / 1000;
   const groupKg = GROUPS.map(g => g[2].reduce((s, c) => s + est[c].kg, 0)), max = Math.max(1, ...groupKg);
   const month = logs.filter(l => l.period_end >= iso(Date.now() - 29 * 864e5)).reduce((s, l) => s + +l.kg_co2e, 0);
   const diff = Math.round((total / INDIA_AVG_T - 1) * 100);
   const top = Object.keys(est).sort((a, b) => est[b].kg - est[a].kg).slice(0, 2);
-  const { data: acts } = await db.from("activities").select("name,category,xp_value").eq("active", true).in("category", top.flatMap(c => LOGS[c].acts));
+  const acts = await activitiesIn(top.flatMap(c => LOGS[c].acts));
   $("app").innerHTML = `<h2>Your estimated carbon footprint</h2>
   <div class="card"><b style="font-size:1.8rem">${total.toFixed(1)} t CO₂e</b> <span class="mute">per year</span>
   <p class="mute">${Math.abs(diff) < 10 ? "About the same as" : `${Math.abs(diff)}% ${diff > 0 ? "above" : "below"}`} India's average of ${INDIA_AVG_T} t per person.${logs.length ? ` You logged ${Math.round(month)} kg in the last 30 days.` : ""}</p>
@@ -663,12 +732,10 @@ async function readBill(f) {
   const m = $("billmsg");
   if (!f) return;
   if (f.size > 10 * 1024 * 1024) { m.className = "err"; m.textContent = "That file is over 10 MB."; return; }
-  const ext = { "application/pdf": "pdf", "image/png": "png", "image/webp": "webp", "image/jpeg": "jpg" }[f.type];
-  if (!ext) { m.className = "err"; m.textContent = "Please upload a JPG, PNG, WebP or PDF."; return; }
+  if (!["application/pdf", "image/png", "image/webp", "image/jpeg"].includes(f.type)) { m.className = "err"; m.textContent = "Please upload a JPG, PNG, WebP or PDF."; return; }
   m.className = "mute"; m.textContent = "Uploading…";
-  const path = `${me.id}/${crypto.randomUUID()}.${ext}`;
-  const up = await db.storage.from("bills").upload(path, f, { contentType: f.type });
-  if (up.error) { m.className = "err"; m.textContent = up.error.message; return; }
+  let path;
+  try { path = await upload("bills", f); } catch (e) { m.className = "err"; m.textContent = e.message; return; }
   billPath = path;
   m.textContent = "Reading your bill… (this can take a few seconds)";
   try {
@@ -689,29 +756,29 @@ async function saveLog(cat) {
   const start = $("f_start").value, end = c.event ? start : $("f_end").value;
   if (!start || !end || end < start) return say("Please check the dates.", 1);
   if (end > iso(Date.now())) return say("Dates can't be in the future.", 1);
-  const { error } = await db.from("footprint_logs").insert({ user_id: me.id, category: cat, period_start: start, period_end: end,
-    details: d, kg_co2e: Math.round(logKg(cat, d) * 10) / 10, bill_path: billPath });
-  if (error) return say(error.message, 1);
+  try {
+    await api("/api/footprint-logs", { category: cat, period_start: start, period_end: end,
+      details: d, kg_co2e: Math.round(logKg(cat, d) * 10) / 10, bill_path: billPath });
+  } catch (e) { return say(e.message, 1); }
   show("fp");
 }
 async function deleteLog(id) {
   if (!confirm("Delete this entry?")) return;
-  const { error } = await db.from("footprint_logs").delete().eq("id", id);
-  error ? alert(error.message) : fp();
+  try { await api(`/api/footprint-logs/${id}`, null, "DELETE"); fp(); } catch (e) { alert(e.message); }
 }
 
 async function ranks() {
-  const { data } = await db.rpc("get_leaderboard", { p_period: "all", p_limit: 50 });
+  const data = await api("/api/leaderboard", null, "GET").catch(() => []);
   $("app").innerHTML = `<h2>Leaderboard</h2>` + ((data||[]).map(r => `<div class="card row"><b>${r.rank}</b><span style="flex:1;margin-left:.6rem">${esc(r.display_name)}<br><span class="mute">${esc(r.department)}</span></span><b>${r.xp} XP</b></div>`).join("") || `<p class="mute">No XP earned yet. Be the first.</p>`);
 }
 async function cert() {
-  const { data } = await db.from("certificates").select("*").eq("user_id", me.id);
+  const data = await api("/api/me/certificates", null, "GET").catch(() => []);
   $("app").innerHTML = `<h2>Annual certificate</h2>` + ((data||[]).map(c => `<div class="card" style="text-align:center;border:3px double var(--pri)"><div class="mute">GreenXP</div><h2>Certificate of ${esc(c.tier)}</h2><p>${esc(me.full_name)} · ${esc(me.usn)}</p>
   <p>${c.xp_earned} verified XP · ${c.activities_count} activities · est. ${c.estimated_co2e} kg CO₂e*</p><b>ID: ${esc(c.certificate_code)}</b><p class="mute" style="font-size:.75rem">*Estimate based on GreenXP's methodology. Points are not carbon credits.</p><button class="s" onclick="window.print()">Print / save as PDF</button></div>`).join("") || `<p class="mute">Certificates are issued at year end for students with 100+ verified XP.</p>`) +
   `<h3>Verify a certificate</h3><div class="card"><input id="vc" placeholder="Certificate ID"><button class="s" onclick="verifyCert()">Verify</button><p id="vr"></p></div>`;
 }
 async function verifyCert() {
-  const { data } = await db.rpc("verify_certificate", { p_code: $("vc").value }); const r = data && data[0];
+  const code = $("vc").value.trim(), r = code && await pub(`/api/public/certificates/${encodeURIComponent(code)}`);
   $("vr").innerHTML = r ? `<b>${esc(r.status).toUpperCase()}</b>: ${esc(r.student_name)}, ${esc(r.tier)}, ${esc(r.academic_year)}, ${esc(r.college)}` : "Not found";
 }
 // ---- Admin portal: approve new users and activity submissions ----
@@ -769,7 +836,7 @@ async function admin() {
   <div class="card"><h3>🎓 Year-end certificates</h3><p class="mute">Issues certificates to members who reached the XP thresholds this academic year. Students who already have one are skipped.</p>
     <button class="o" onclick="issueAll()">Issue certificates</button><p id="cmsg" class="mute"></p></div>`;
   loadStats();
-  db.rpc("lifestyle_summary").then(({ data: s }) => {
+  api("/api/admin/lifestyle-summary", null, "GET").catch(() => null).then(s => {
     if (!s || !s.responses || !$("ls")) return;
     $("ls").innerHTML = `<div class="card"><h3>🌍 Student lifestyle baseline</h3><div class="row"><span>${s.responses} students answered</span><b>avg ${(s.avg_total_kg / 1000).toFixed(1)} t CO₂e / year</b></div>` +
       Object.entries(CATS).map(([k, c]) => `<div class="row mute"><span>${c.icon} ${c.label}</span><span>${s.avg[k]} kg</span></div>`).join("") + `</div>`;

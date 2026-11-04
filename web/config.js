@@ -1,6 +1,7 @@
-// Public values only. Never put the service-role key or Razorpay secret here.
+// Public values only; never put secrets here. aws/deploy.ps1 writes the live values from the CloudFormation
+// stack's outputs when it uploads the site, so this file only matters for running the page locally.
 window.GXP = {
-  SUPABASE_URL: "https://eloslvxejendunwoaydm.supabase.co",
-  SUPABASE_KEY: "sb_publishable_EUOEORx9w-Q7ysVnqB5tsg_sFA8-I2e",
-  API_URL: "https://greenxp-api.onrender.com" // change to your Render API URL
+  API_URL: "",              // "" = same site (Caddy on the server sends /api/* to the API)
+  COGNITO_REGION: "ap-south-1",
+  COGNITO_CLIENT_ID: ""     // from the stack output CognitoClientId
 };
