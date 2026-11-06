@@ -18,7 +18,7 @@ browser ──> S3 uploads (signed forms from the API)
 | Database | RDS PostgreSQL 17 `db.t4g.micro`, private, 7 days of backups, password managed by RDS in Secrets Manager |
 | Sign-in | Cognito user pool (email + password, emailed codes for sign-up and password reset) |
 | Files | S3 bucket `greenxp-uploads-<account>` with `proofs/` and `bills/` |
-| Secrets | Secrets Manager `greenxp/app` (Razorpay, Anthropic, webhook secret) |
+| Secrets | Secrets Manager `greenxp/app` (Anthropic, Resend) |
 
 DNS: GoDaddy A record `greenxp.in` → `13.206.152.233`. The Elastic IP is allocated outside the stack
 (`eipalloc-044fc879cc73b5b99`, passed in by deploy.ps1), so it survives server replacement and stack rebuilds.
@@ -40,15 +40,28 @@ Needs the AWS CLI with the `Mukesh` profile.
 
 ## Secrets
 
-The API starts without Razorpay keys (payments show "not switched on yet") but needs them for payments. Set them in the
-console (Secrets Manager > `greenxp/app` > Retrieve secret value > Edit), keeping `RAZORPAY_WEBHOOK_SECRET` as it is, then
-run `.\aws\deploy.ps1 -Api` to restart the API.
+Set these with `.\aws\set-secrets.ps1`, then run `.\aws\deploy.ps1 -Api` to restart the API. The API starts without them.
 
 | Key | Value |
 |---|---|
-| `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` | Razorpay dashboard |
-| `RAZORPAY_WEBHOOK_SECRET` | generated; use the same value for the Razorpay webhook `https://<site>/api/payments/webhook` (`payment.captured`, `order.paid`) |
 | `ANTHROPIC_API_KEY` | optional, turns on reading electricity bills |
+| `RESEND_API_KEY` | optional, turns on emails to students (see below) |
+| `EMAIL_FROM` | optional sender, default `GreenXP <noreply@greenxp.in>`; must be on a domain verified in Resend |
+
+## Payments
+
+Students pay the fee by UPI to the ID and QR code on the pay screen (`UPI_ID` and `upi-qr.jpeg` in [web/](../web/)), then send
+the transaction ID or a screenshot (S3 `payments/`). Their membership starts when the super admin confirms it in
+Admin portal > Payments. Check each one against the bank account: the details a student sends prove nothing on their own.
+
+## Email
+
+[api/email.js](../api/email.js) sends these through Resend from `greenxp.in`: account approved or rejected, payment confirmed
+or rejected, activities rejected (one email per student per review) and certificate issued. Emails go out after the change is saved, and
+a failed send only logs `email not sent:` in the API's log. Resend's free plan allows 100 emails a day and 3,000 a month, so
+issuing certificates to a large college at once needs a paid plan.
+
+Sign-up codes and password resets still come from Cognito, not Resend.
 
 ## Database
 
@@ -63,7 +76,7 @@ aws ssm start-session --target <ApiInstanceId> --profile Mukesh --region ap-sout
 sudo greenxp-psql
 ```
 
-For a schema change, write the SQL in a new file under `db/migrations/`, try it with `greenxp-psql -f`, and commit it.
+For a schema change, write the SQL in a new file under `db/migrations/`, run it with `.\aws\deploy.ps1 -Sql <file>`, and commit it.
 
 Logs: `sudo journalctl -u greenxp -f` on the server; Postgres logs in CloudWatch.
 

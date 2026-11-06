@@ -4,15 +4,16 @@ Deploys GreenXP to AWS. With no switches it does -Infra, -Api and -Web in that o
   .\aws\deploy.ps1 -Api            # just the API code
   .\aws\deploy.ps1 -Web            # just the site
   .\aws\deploy.ps1 -Migrate        # one-off copy from Supabase (see aws/README.md)
+  .\aws\deploy.ps1 -Sql <file>     # runs a SQL file on the database, before any -Api or -Web in the same command
 #>
 param(
-  [switch]$Infra, [switch]$Api, [switch]$Web, [switch]$Migrate,
+  [switch]$Infra, [switch]$Api, [switch]$Web, [switch]$Migrate, [string]$Sql,
   [string]$Stack = "greenxp", [string]$Region = "ap-south-1", [string]$Profile = "Mukesh",
   [string]$Domain = "greenxp.in",
   [string]$EipAllocationId = "eipalloc-044fc879cc73b5b99" # 13.206.152.233, the A record for greenxp.in
 )
 $ErrorActionPreference = "Stop"
-if (-not ($Infra -or $Api -or $Web -or $Migrate)) { $Infra = $Api = $Web = $true }
+if (-not ($Infra -or $Api -or $Web -or $Migrate -or $Sql)) { $Infra = $Api = $Web = $true }
 $root = Split-Path $PSScriptRoot
 $aws = (Get-Command aws -ErrorAction SilentlyContinue).Source
 if (-not $aws) { $aws = "C:\Program Files\Amazon\AWSCLIV2\aws.exe" }
@@ -55,6 +56,13 @@ if ($Infra) {
     --parameter-overrides "DomainName=$Domain" "ApiEipAllocationId=$EipAllocationId"
 }
 $out = Outputs
+
+if ($Sql) {
+  Write-Host "== SQL $Sql"
+  Aws s3 cp $Sql "s3://$($out.ArtifactsBucket)/migration/run.sql" --only-show-errors
+  OnServer $out.ApiInstanceId ("aws s3 cp s3://$($out.ArtifactsBucket)/migration/run.sql /tmp/run.sql --quiet --region $Region && " +
+    "/usr/local/bin/greenxp-psql -v ON_ERROR_STOP=1 -f /tmp/run.sql")
+}
 
 if ($Api) {
   Write-Host "== API"

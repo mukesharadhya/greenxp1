@@ -49,9 +49,6 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 .tbl::-webkit-scrollbar,.topscroll::-webkit-scrollbar{height:12px;width:12px}
 .tbl::-webkit-scrollbar-thumb,.topscroll::-webkit-scrollbar-thumb{background:var(--pri);border-radius:8px;border:2px solid var(--line)}
 .tbl::-webkit-scrollbar-track,.topscroll::-webkit-scrollbar-track{background:var(--line);border-radius:8px}
-.paygrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.6rem;margin-bottom:.6rem}
-.payopt{display:flex;flex-direction:column;align-items:flex-start;gap:.15rem;text-align:left;padding:.8rem}
-.payopt span{font-size:1.5rem}.payopt small{font-weight:400;font-size:.8rem;opacity:.9}
 .chip{display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .9rem;border:2px solid var(--line);border-radius:99px;cursor:pointer;font-weight:700}
 .chip input{width:auto;margin:0}.chip:has(input:checked){border-color:var(--pri);background:color-mix(in srgb,var(--pri) 18%,transparent)}
 .acticon{font-size:1.9rem;line-height:1;flex-shrink:0}
@@ -69,7 +66,6 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 <dialog id="lo" aria-labelledby="lo_t"><form method="dialog"><h3 id="lo_t">Log out?</h3><p class="mute">Are you sure you want to log out of GreenXP?</p>
   <div class="row"><button value="cancel" class="o" autofocus>Stay logged in</button><button value="ok">Log out</button></div></form></dialog>
 <script src="config.js"></script>
-<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
@@ -113,7 +109,9 @@ async function api(path, body, method = "POST") {
 const pub = path => fetch(GXP.API_URL + path).then(r => r.ok ? r.json() : null).catch(() => null);
 // Photos and bills go straight to storage with a short-lived upload form from the API.
 async function upload(bucket, file) {
-  const u = await api("/api/uploads", { bucket, contentType: file.type || "image/jpeg" });
+  // Some browsers don't know HEIC and leave the type empty.
+  const byExt = { heic: "image/heic", heif: "image/heif", pdf: "application/pdf" }[file.name.split(".").pop().toLowerCase()];
+  const u = await api("/api/uploads", { bucket, contentType: file.type || byExt || "image/jpeg" });
   const fd = new FormData();
   for (const [k, v] of Object.entries(u.fields)) fd.append(k, v);
   fd.append("file", file); // must come last
@@ -427,45 +425,45 @@ async function analysisScreen() {
 
 // Activities of the student's college in some categories, for the suggestions under the footprint.
 const activitiesIn = cats => api(`/api/activities?categories=${encodeURIComponent(cats.join(","))}`, null, "GET").catch(() => []);
+const UPI_ID = "mukhesharadhya@oksbi";
 async function payScreen(y) {
-  const f = y ? await api("/api/fee", null, "GET").catch(() => null) : null;
-  const phone = matchMedia("(pointer: coarse)").matches; // UPI apps open directly on phones; on computers a QR code is shown
-  // Only offer UPI if the Razorpay account has it switched on; otherwise grey it out and point to card / net banking.
-  const methods = await fetch(GXP.API_URL + "/api/payments/methods").then(r => r.json()).catch(() => ({ upi: true }));
-  const upiOff = methods.upi === false, off = upiOff ? ` disabled title="UPI isn't available yet"` : "";
-  $("app").innerHTML = `<h2>Activate your year</h2><div class="card"><h1>₹${f ? f.amount : "-"}</h1><p class="mute">Includes XP tracking, your footprint dashboard, leaderboards and your annual certificate.</p>
-  <p><b>Choose how to pay</b></p>
-  <div class="paygrid">
-    <button class="payopt${upiOff ? " o" : ""}" onclick="pay('upi')"${off}><span>📱</span><b>UPI app</b><small>${upiOff ? "Coming soon" : phone ? "Google Pay, PhonePe, Paytm…" : "Pay with UPI from your phone"}</small></button>
-    <button class="payopt${upiOff ? " o" : ""}" onclick="pay('qr')"${off}><span>🔳</span><b>Scan QR code</b><small>${upiOff ? "Coming soon" : "Scan with any UPI app"}</small></button>
-    <button class="payopt${upiOff ? "" : " o"}" onclick="pay('other')"><span>💳</span><b>Card / Net banking</b><small>Debit or credit card, net banking, wallets</small></button>
-  </div>${upiOff ? `<p class="warn">UPI payments aren't available yet. Please pay by card, net banking or wallet for now.</p>` : ""}<p id="msg"></p><p class="mute" style="font-size:.8rem">🔒 Payments are processed securely by Razorpay. GreenXP never sees your card or UPI PIN.</p></div>`;
+  $("tabs").hidden = true;
+  const [f, last] = await Promise.all([y ? api("/api/fee", null, "GET").catch(() => null) : null, api("/api/payments/upi", null, "GET").catch(() => null)]);
+  const logout = `<p><button class="o s" onclick="logout()">Log out</button></p>`;
+  if (last?.status === "submitted") {
+    $("app").innerHTML = `<h2>⏳ Checking your payment</h2><div class="card"><p>Thanks! We've got your payment details and will confirm them against our account. We'll email you when your membership is active.</p>
+      ${last.upi_ref ? `<div class="row mute"><span>Transaction ID</span><b>${esc(last.upi_ref)}</b></div>` : ""}
+      <p class="mute">This usually takes a day or two.</p><p><button onclick="init()">Check again</button></p>${logout}</div>`;
+    return;
+  }
+  if (!f) {
+    $("app").innerHTML = `<h2>Activate your year</h2><div class="card"><p>The fee for this year hasn't been set yet. Please contact your college's GreenXP admin.</p><p><button onclick="init()">Check again</button></p>${logout}</div>`;
+    return;
+  }
+  $("app").innerHTML = `<h2>Activate your year</h2>
+  ${last?.status === "failed" ? `<div class="card"><p class="err"><b>We couldn't confirm your last payment.</b></p>${last.review_note ? `<p><b>Reason:</b> ${esc(last.review_note)}</p>` : ""}<p class="mute">If you did pay, send the correct details below.</p></div>` : ""}
+  <div class="card"><h1>₹${esc(f.amount)}</h1><p class="mute">Includes XP tracking, your footprint dashboard, leaderboards and your annual certificate.</p>
+    <h3>1. Pay by UPI</h3><p>Scan the code with any UPI app and pay exactly <b>₹${esc(f.amount)}</b>.</p>
+    <p style="text-align:center"><img src="upi-qr.jpeg" alt="UPI QR code for ${UPI_ID}" style="width:100%;max-width:280px;border-radius:12px"></p>
+    <div class="row" style="flex-wrap:wrap"><span>UPI ID: <b>${UPI_ID}</b></span><button class="s o" onclick="copyUpi(this)">Copy</button></div>
+    <h3>2. Tell us you've paid</h3><p class="mute">Give the transaction ID, or upload a screenshot of the payment, or both.</p>
+    <label for="upiref">UPI transaction ID</label><input id="upiref" maxlength="40" autocomplete="off" placeholder="Usually 12 digits">
+    <label for="upishot">Payment screenshot or PDF (up to 10 MB)</label><input id="upishot" type="file" accept="image/*,application/pdf,.heic,.heif,.pdf">
+    <p><button id="upigo" onclick="sendPayment()">I've paid</button></p><p id="msg"></p>${logout}</div>`;
 }
-// Razorpay Checkout opens with the chosen method listed first. The other methods stay available underneath
-// (show_default_blocks: true): if a UPI flow isn't offered on this device or account (e.g. app "intent" on a
-// computer, or QR in test mode), Checkout must still have something to show instead of "No appropriate payment method".
-// The UPI block names no flows, so Razorpay offers whichever UPI options work here.
-const PAY_DISPLAY = {
-  upi: { blocks: { upi: { name: "Pay with UPI", instruments: [{ method: "upi" }] } }, sequence: ["block.upi"], preferences: { show_default_blocks: true } },
-  qr: { blocks: { qr: { name: "Scan & pay with any UPI app", instruments: [{ method: "upi", flows: ["qr"] }] } }, sequence: ["block.qr"], preferences: { show_default_blocks: true } },
-  other: null
-};
-async function pay(method = "other") {
-  const btns = [...document.querySelectorAll(".payopt")].filter(b => !b.title); // leave unavailable options as they are
-  if (btns.some(b => b.disabled)) return;
-  btns.forEach(b => b.disabled = true); say("Starting payment…");
+async function copyUpi(btn) {
+  try { await navigator.clipboard.writeText(UPI_ID); btn.textContent = "Copied"; }
+  catch { say("Please copy the UPI ID by hand.", 1); }
+}
+async function sendPayment() {
+  const btn = $("upigo"), transactionId = $("upiref").value.trim(), file = $("upishot").files[0];
+  if (!transactionId && !file) return say("Enter the transaction ID or upload a screenshot.", 1);
+  btn.disabled = true; say("Sending…");
   try {
-    const o = await api("/api/payments/create-order");
-    say("");
-    const rzp = new Razorpay({ key: o.keyId, order_id: o.orderId, amount: o.amount, currency: o.currency, name: "GreenXP",
-      description: "Yearly membership", prefill: { email: me.email || "", contact: me.phone || "" }, theme: { color: "#19b37a" },
-      ...(PAY_DISPLAY[method] ? { config: { display: PAY_DISPLAY[method] } } : {}),
-      modal: { ondismiss: () => say("Payment cancelled. Choose a way to pay to try again.") },
-      handler: async r => { say("Confirming your payment…"); try { await api("/api/payments/verify", r); init(); } catch (e) { say(e.message, 1); } } });
-    rzp.on("payment.failed", r => say(`Payment failed: ${r.error?.description || "please try again"}.`, 1));
-    rzp.open();
-  } catch (e) { say(e.message, 1); }
-  finally { btns.forEach(b => b.disabled = false); }
+    const proofPath = file ? await upload("payments", file) : null;
+    await api("/api/payments/upi", { transactionId, proofPath });
+    init();
+  } catch (e) { say(e.message, 1); btn.disabled = false; }
 }
 function show(t) {
   tab = t;
@@ -822,12 +820,23 @@ const SECTIONS = {
     approveMsg: n => `Approve ${n} submissions and award their XP?`, doneMsg: (n, ok) => `${n} submission${n > 1 ? "s" : ""} ${ok ? "approved, XP awarded" : "rejected"}.`,
     search: s => [s.student.full_name, s.student.usn, s.activities.name].join(" "), placeholder: "Search student, USN or activity",
     card: subCard
+  },
+  payments: {
+    title: "💰 Payments", noun: ["payment", "payments"], superOnly: true,
+    views: [["pending", "⏳ Waiting"], ["paid", "✅ Confirmed"], ["rejected", "❌ Rejected"]],
+    list: v => `/api/super/payments?status=${v}`, review: "/api/super/payments/review",
+    filter: ["Institution", p => p.college || "No institution"],
+    empty: { pending: "No payments waiting. 🎉", paid: "No confirmed payments yet.", rejected: "No rejected payments." },
+    reasons: ["Payment not found in our account", "Wrong amount paid", "Transaction ID is incorrect", "Screenshot is unclear"],
+    approveMsg: n => `Confirm ${n} payments? Only do this if the money is in your account.`, doneMsg: (n, ok) => `${n} payment${n > 1 ? "s" : ""} ${ok ? "confirmed, membership active" : "rejected"}.`,
+    search: p => [p.student.full_name, p.student.usn, p.student.email, p.upi_ref].join(" "), placeholder: "Search student, USN, email or transaction ID",
+    card: payCard
   }
 };
 let adminSection = "users", adminView = "pending", adminData = [], adminSel = new Set();
 // Portal heading, stats and section switcher; the super admin also gets the Institutions section.
 function adminHeader() {
-  const secs = Object.entries(SECTIONS).map(([k, s]) => [k, s.title]);
+  const secs = Object.entries(SECTIONS).filter(([, s]) => !s.superOnly || me.role === "super_admin").map(([k, s]) => [k, s.title]);
   if (me.role === "super_admin") secs.push(["institutions", "🏫 Institutions"]);
   return `<h2>🛠 Admin portal</h2><div id="stats" class="stats"></div>
   <div class="row" style="justify-content:flex-start;flex-wrap:wrap;margin-bottom:.7rem">${secs.map(([k, t]) =>
@@ -886,7 +895,7 @@ async function loadStats() {
     const s = await api("/api/admin/stats", null, "GET");
     $("stats").innerHTML = [["New users waiting", s.usersPending], ["Activities waiting", s.pending], ["Activities approved (7 days)", s.approvedWeek], ["Active members", `${s.members} / ${s.students}`]]
       .map(([t, v]) => `<div class="stat"><b>${v}</b><span class="mute">${t}</span></div>`).join("");
-    for (const [k, n] of [["users", s.usersPending], ["activities", s.pending]]) { const b = $("n_" + k); if (b) { b.textContent = n; b.hidden = !n; } }
+    for (const [k, n] of [["users", s.usersPending], ["activities", s.pending], ["payments", s.paymentsPending]]) { const b = $("n_" + k); if (b) { b.textContent = n; b.hidden = !n; } }
   } catch (e) { $("stats").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
 }
 const shown = () => {
@@ -947,6 +956,19 @@ function subCard(s, pending) {
   ${s.duplicate ? `<div class="warn">⚠ This photo was also used in ${s.duplicate.count} other submission${s.duplicate.count > 1 ? "s" : ""}${s.duplicate.otherStudent ? ", including another student's" : ""}.</div>` : ""}
   ${pending ? reviewButtons(s.id)
     : `<p class="mute">${s.verification_status === "verified" ? "✅ Approved" : "❌ Rejected"} ${s.verified_at ? ago(s.verified_at) : ""}${s.reviewer ? " by " + esc(s.reviewer.full_name) : ""}${s.rejection_reason ? `<br>Reason: ${esc(s.rejection_reason)}` : ""}</p>`}
+  </div>`;
+}
+function payCard(p, pending) {
+  const st = p.student;
+  return `<div class="card">
+  ${!p.proof_url ? `<div class="noproof mute">No screenshot</div>`
+    : ["pdf", "heic", "heif"].includes(p.proof_ext) ? `<div class="noproof"><a href="${esc(p.proof_url)}" target="_blank" rel="noopener" style="color:var(--prid);font-weight:700">📄 Open ${esc(p.proof_ext.toUpperCase())} file</a></div>`
+    : `<img class="proof" src="${esc(p.proof_url)}" alt="Payment screenshot from ${esc(st.full_name)}" onclick="zoom(this.src)">`}
+  <div class="row"><b>${esc(st.full_name || "Student")}</b><span class="pill">₹${esc(p.amount)}</span></div>
+  <div style="margin:.2rem 0 .3rem;font-weight:700">${p.upi_ref ? esc(p.upi_ref) : `<span class="mute">No transaction ID</span>`}</div>
+  <span class="mute">${esc(st.usn || "no USN")} · ${esc(p.college || "no institution")}</span><br>
+  <span class="mute">${esc(st.email)} · sent ${ago(p.created_at)}</span>
+  ${pending ? reviewButtons(p.id) : `<p class="mute">${adminView === "paid" ? "✅ Confirmed" : "❌ Rejected"} ${p.reviewed_at ? ago(p.reviewed_at) : ""}${p.review_note ? `<br>Reason: ${esc(p.review_note)}` : ""}</p>`}
   </div>`;
 }
 function zoom(src) { $("lb").querySelector("img").src = src; $("lb").hidden = false; }

@@ -1,7 +1,7 @@
 <#
 Fills in the GreenXP app secret (Secrets Manager "greenxp/app") without the values showing on screen or in history.
 Press Enter to keep a value as it is; type "-" to remove it.
-  .\aws\set-secrets.ps1              # Razorpay and Anthropic keys
+  .\aws\set-secrets.ps1              # Anthropic and Resend keys
   .\aws\set-secrets.ps1 -Supabase    # also the one-off Supabase migration settings
 #>
 param([switch]$Supabase, [string]$Region = "ap-south-1", [string]$Profile = "Mukesh", [string]$SecretId = "greenxp/app")
@@ -14,7 +14,7 @@ if ($LASTEXITCODE) { throw "Couldn't read $SecretId" }
 $values = @{}
 ($current | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $values[$_.Name] = $_.Value }
 
-$keys = @("RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "ANTHROPIC_API_KEY")
+$keys = @("ANTHROPIC_API_KEY", "RESEND_API_KEY")
 if ($Supabase) { $keys += "SUPABASE_DB_URL", "SUPABASE_SERVICE_ROLE_KEY" }
 foreach ($k in $keys) {
   $state = if ($values[$k]) { "set" } else { "empty" }
