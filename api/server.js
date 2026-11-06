@@ -273,6 +273,7 @@ app.post("/api/payments/create-order", auth, approved, wrap(async (req, res) => 
   const fee = await one("select amount, currency from public.fee_settings where college_id = $1 and academic_year_id = $2 and active", [p.college_id, y.id]);
   if (!fee) return res.status(400).json({ error: "The fee for this year has not been set yet" });
   const paise = Math.round(fee.amount * 100);
+  if (paise < 100) return res.status(400).json({ error: "This fee is too low to pay online (Razorpay's minimum is ₹1). Please contact your college admin." });
 
   // Reuse an unpaid order for the same fee, so pressing Pay twice cannot lead to paying twice.
   const open = await one(`select gateway_order_id, amount, currency from public.payments where user_id = $1 and academic_year_id = $2
@@ -284,7 +285,10 @@ app.post("/api/payments/create-order", auth, approved, wrap(async (req, res) => 
     headers: { "Content-Type": "application/json", Authorization: "Basic " + Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString("base64") },
     body: JSON.stringify({ amount: paise, currency: fee.currency, receipt: "gxp_" + Date.now() }) });
   const o = await r.json();
-  if (!r.ok) return res.status(502).json({ error: "Payment provider error" });
+  if (!r.ok) {
+    console.error("Razorpay order failed:", r.status, o.error?.description);
+    return res.status(r.status === 401 ? 401 : 500).json({ error: "Payment provider error. Please try again later." });
+  }
   // If this insert fails we throw before the browser gets the order, so nobody can pay for an order we did not record.
   await tx(async (sql) => {
     await sql("insert into public.payments (user_id, academic_year_id, amount, currency, gateway_order_id) values ($1, $2, $3, $4, $5)",
@@ -310,6 +314,7 @@ app.get("/api/payments/methods", wrap(async (req, res) => {
 app.post("/api/payments/verify", auth, wrap(async (req, res) => {
   if (!paymentsReady) return res.status(503).json({ error: "Payments aren't switched on yet." });
   const { razorpay_order_id: o, razorpay_payment_id: p, razorpay_signature: s } = req.body;
+  if (!o || !p || !s) return res.status(400).json({ error: "Missing payment details" });
   if (!same(hmac(RAZORPAY_KEY_SECRET, `${o}|${p}`), s)) return res.status(400).json({ error: "Invalid payment signature" });
   await markPaid(o, p);
   res.json({ ok: true });
