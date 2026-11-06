@@ -360,15 +360,18 @@ app.post("/api/rewards/:id/redeem", auth, approved, wrap(async (req, res) => {
 }));
 
 // 5. Admin dashboard
+// The super admin reviews new users of every college (a new college may have no admin yet); others only their own.
+const reviewScope = (p) => p.role === "super_admin" ? null : p.college_id;
+
 app.get("/api/admin/stats", auth, admin, wrap(async (req, res) => {
   res.json(await one(`select
-    (select count(*) from public.profiles where college_id = $1 and role = 'student' and approval_status = 'pending') "usersPending",
+    (select count(*) from public.profiles where ($2::uuid is null or college_id = $2) and role = 'student' and approval_status = 'pending') "usersPending",
     count(*) filter (where s.verification_status = 'pending') pending,
     count(*) filter (where s.verification_status = 'verified' and s.verified_by is not null and s.verified_at >= now() - interval '7 days') "approvedWeek",
     count(*) filter (where s.verification_status = 'rejected' and s.verified_at >= now() - interval '7 days') "rejectedWeek",
     (select count(*) from public.memberships m join public.profiles mp on mp.id = m.user_id where mp.college_id = $1 and m.status in ('active', 'waived')) members,
     (select count(*) from public.profiles where college_id = $1 and role = 'student') students
-    from public.activity_submissions s join public.profiles st on st.id = s.user_id where st.college_id = $1`, [req.profile.college_id]));
+    from public.activity_submissions s join public.profiles st on st.id = s.user_id where st.college_id = $1`, [req.profile.college_id, reviewScope(req.profile)]));
 }));
 
 app.get("/api/admin/lifestyle-summary", auth, admin, wrap(async (req, res) => {
@@ -380,24 +383,31 @@ app.get("/api/admin/lifestyle-summary", auth, admin, wrap(async (req, res) => {
 app.get("/api/admin/users", auth, admin, wrap(async (req, res) => {
   const status = ["pending", "approved", "rejected"].includes(req.query.status) ? req.query.status : "pending";
   res.json(await q(`select u.id, u.email, u.full_name, u.usn, u.department, u.year, u.phone, u.created_at, u.approval_status,
-      u.approval_note, u.approved_at, case when u.approved_by is not null then json_build_object('full_name', r.full_name) end approver
-    from public.profiles u left join public.profiles r on r.id = u.approved_by
-    where u.college_id = $1 and u.role = 'student' and u.approval_status = $2
-    order by ${status === "pending" ? "u.created_at" : "u.approved_at desc"} limit 200`, [req.profile.college_id, status]));
+      u.approval_note, u.approved_at, c.name college, case when u.approved_by is not null then json_build_object('full_name', r.full_name) end approver
+    from public.profiles u left join public.profiles r on r.id = u.approved_by left join public.colleges c on c.id = u.college_id
+    where ($1::uuid is null or u.college_id = $1) and u.role = 'student' and u.approval_status = $2
+    order by ${status === "pending" ? "u.created_at" : "u.approved_at desc"} limit 200`, [reviewScope(req.profile), status]));
 }));
 
 app.post("/api/admin/users/review", auth, admin, wrap(async (req, res) => {
-  const { ids, approve, reason } = req.body;
+  const { ids, approve, reason } = req.body, waive = !!(approve && req.body.waive);
   if (!Array.isArray(ids) || !ids.length || ids.length > 200 || !ids.every(isId))
     return res.status(400).json({ error: "Choose between 1 and 200 users" });
   const note = approve ? null : String(reason || "Not approved by your college admin").slice(0, 500);
   const done = await tx(async (sql) => {
     const rows = await sql(`update public.profiles set approval_status = $2, approval_note = $3, approved_by = $4, approved_at = now()
-      where id = any($1::uuid[]) and college_id = $5 and role = 'student' returning id`,
-      [ids, approve ? "approved" : "rejected", note, req.user.id, req.profile.college_id]);
+      where id = any($1::uuid[]) and ($5::uuid is null or college_id = $5) and role = 'student' returning id`,
+      [ids, approve ? "approved" : "rejected", note, req.user.id, reviewScope(req.profile)]);
     if (rows.length) await sql(`insert into public.audit_logs (actor_id, action, target_type, target_id, details)
       select $1, $2, 'profile', id::text, $3 from unnest($4::uuid[]) id`,
-      [req.user.id, approve ? "approve_user" : "reject_user", { reason: note }, rows.map((u) => u.id)]);
+      [req.user.id, approve ? "approve_user" : "reject_user", { reason: note, fee_waived: waive }, rows.map((u) => u.id)]);
+    // "Approve + free year": this year's membership without paying, e.g. for a demo session. A paid membership stays as it is.
+    if (waive && rows.length) await sql(`insert into public.memberships (user_id, academic_year_id, status, start_date, end_date, waived_by, waiver_reason)
+      select p.id, y.id, 'waived', y.start_date, y.end_date, $2, 'Fee waived by admin'
+      from public.profiles p join public.academic_years y on y.college_id = p.college_id and y.is_current where p.id = any($1::uuid[])
+      on conflict (user_id, academic_year_id) do update set status = 'waived', start_date = excluded.start_date, end_date = excluded.end_date,
+        waived_by = excluded.waived_by, waiver_reason = excluded.waiver_reason where public.memberships.status <> 'active'`,
+      [rows.map((u) => u.id), req.user.id]);
     return rows;
   });
   res.json({ done: done.length, failed: ids.filter((id) => !done.some((u) => u.id === id)).map((id) => ({ id, error: "Not a student of your college" })) });
