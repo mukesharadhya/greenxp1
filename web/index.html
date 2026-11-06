@@ -54,6 +54,8 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 .payopt span{font-size:1.5rem}.payopt small{font-weight:400;font-size:.8rem;opacity:.9}
 .chip{display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .9rem;border:2px solid var(--line);border-radius:99px;cursor:pointer;font-weight:700}
 .chip input{width:auto;margin:0}.chip:has(input:checked){border-color:var(--pri);background:color-mix(in srgb,var(--pri) 18%,transparent)}
+.actgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem;align-items:start}.actgrid .card{margin:0}
+@media(max-width:760px){.actgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:480px){.actgrid{grid-template-columns:minmax(0,1fr)}}
 .actdet{margin-top:.6rem;padding-top:.6rem;border-top:1px dashed var(--line)}.actdet p{margin:.2rem 0 .6rem}.chev{font-size:1.2rem}
 .err{color:#b3261e;font-weight:700}.bar{height:12px;background:var(--line);border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pri)}
 </style></head>
@@ -469,7 +471,7 @@ function show(t) {
   const T = ["admin","super_admin"].includes(me.role) ? [["admin","🛠 Admin"],["ranks","🏆 Ranks"]]
     : [["home","🏠 Home"],["earn","⭐ Earn"],["fp","🌍 Footprint"],["ranks","🏆 Ranks"],["cert","🎓 Certificate"]];
   $("tabs").innerHTML = T.map(x => `<button class="${x[0]==t?"on":""}" onclick="show('${x[0]}')">${x[1]}</button>`).join("") + `<button onclick="logout()">Out</button>`;
-  $("app").classList.toggle("wide", t === "admin");
+  $("app").classList.toggle("wide", ["admin", "earn"].includes(t));
   ({ home, earn, fp, ranks, cert, admin })[t]();
 }
 async function home() {
@@ -491,13 +493,13 @@ async function earn() {
   // Tapping an activity opens its one-line instruction and the right button for how it's checked.
   const ACTION = { photo: "📷 Upload photo", photo_admin: "📷 Upload photo", self: "✅ Mark as done", qr_event: "🔑 Enter event code" };
   const HOW = { self: "instant XP", photo: "photo · approved by admin", photo_admin: "photo · approved by admin", qr_event: "event code", automatic: "automatic" };
-  $("app").innerHTML = `<h2>Earn XP</h2><p class="mute">Tap an activity to see what to do.</p><p id="msg" class="mute"></p>` + data.map(a => `<div class="card act" id="ac_${esc(a.id)}">
+  $("app").innerHTML = `<h2>Earn XP</h2><p class="mute">Tap an activity to see what to do.</p><p id="msg" class="mute"></p><div class="actgrid">` + data.map(a => `<div class="card act" id="ac_${esc(a.id)}">
     <div class="row" role="button" tabindex="0" aria-expanded="false" onclick="openAct('${esc(a.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAct('${esc(a.id)}')}" style="cursor:pointer">
       <div><b>${esc(a.name)}</b><br><span class="mute">${esc(a.category)} · ${a.frequency_limit} per ${a.frequency_period} · ${HOW[a.verification_type] || ""}</span></div>
       <span style="white-space:nowrap"><span class="pill">+${a.xp_value}</span> <span class="mute chev">›</span></span></div>
     <div class="actdet" hidden><p>📝 ${esc(a.description || "Complete this activity to earn XP.")}</p>${actQuestions(a)}
       ${a.verification_type === "automatic" ? `<p class="mute">Nothing to submit – XP is added automatically.</p>`
-        : `<button class="s" onclick="doAct('${esc(a.id)}')">${ACTION[a.verification_type] || "Go"}</button><p class="actmsg mute"></p>`}</div></div>`).join("");
+        : `<button class="s" onclick="doAct('${esc(a.id)}')">${ACTION[a.verification_type] || "Go"}</button><p class="actmsg mute"></p>`}</div></div>`).join("") + `</div>`;
 }
 // Extra questions an activity asks before submitting (activities.inputs), e.g. walk or cycle, and the distance.
 const CHOICE_ICON = { Walk: "🚶", Cycle: "🚲" };
