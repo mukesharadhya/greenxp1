@@ -384,6 +384,30 @@ app.get("/api/admin/lifestyle-summary", auth, admin, wrap(async (req, res) => {
   res.json(r.s);
 }));
 
+// Add an activity to the admin's college; the super admin can add it to every college at once.
+// Event-code and automatic activities aren't offered: nothing in the portal can run them yet.
+const ACTIVITY_CATEGORIES = ["Campus", "Community", "Energy", "Food", "Recycling", "Reuse", "Transport", "Waste", "Water"];
+app.post("/api/admin/activities", auth, admin, wrap(async (req, res) => {
+  const name = String(req.body.name || "").trim(), description = String(req.body.description || "").trim();
+  const { category, verification, period } = req.body, xp = Number(req.body.xp), limit = Number(req.body.limit);
+  if (!name || name.length > 80) return res.status(400).json({ error: "Enter the activity's name (up to 80 characters)" });
+  if (!description || description.length > 500) return res.status(400).json({ error: "Say what students should do (up to 500 characters)" });
+  if (!ACTIVITY_CATEGORIES.includes(category)) return res.status(400).json({ error: "Choose a category" });
+  if (!["photo_admin", "self"].includes(verification)) return res.status(400).json({ error: "Choose how it is checked" });
+  if (!["day", "week", "month", "total"].includes(period)) return res.status(400).json({ error: "Choose how often it can be done" });
+  if (!Number.isInteger(xp) || xp < 1 || xp > 100) return res.status(400).json({ error: "XP must be a whole number from 1 to 100" });
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50) return res.status(400).json({ error: "The limit must be a whole number from 1 to 50" });
+  const college = req.body.allColleges && req.profile.role === "super_admin" ? null : req.profile.college_id;
+  const rows = await q(`insert into public.activities (college_id, name, description, category, xp_value, frequency_limit, frequency_period, verification_type)
+    select c.id, $1::text, $2::text, $3::text, $4::int, $5::int, $6::text, $7::text from public.colleges c
+    where ($8::uuid is null or c.id = $8) and not exists (select 1 from public.activities a
+      where a.college_id = c.id and a.active and lower(trim(a.name)) = lower($1::text)) returning id`,
+    [name, description, category, xp, limit, period, verification, college]);
+  if (!rows.length) return res.status(400).json({ error: "An activity with this name already exists" });
+  await audit(req.user.id, "create_activity", "activity", null, { name, colleges: rows.length });
+  res.json({ added: rows.length });
+}));
+
 // New users: students of the admin's college by approval status, newest first.
 app.get("/api/admin/users", auth, admin, wrap(async (req, res) => {
   const status = ["pending", "approved", "rejected"].includes(req.query.status) ? req.query.status : "pending";

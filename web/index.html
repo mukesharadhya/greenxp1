@@ -505,7 +505,7 @@ async function earn() {
 }
 // Each activity's icon; an activity added later gets its category's icon.
 const ACT_ICONS = { "Campus Cleanup": "🧹", "Campus Gardening": "🌻", "Plant a Tree": "🌳", "Sustainability Event": "🎪",
-  "7-Day Green Challenge": "🏅", "Bring a Friend": "🤝", "Energy Saver": "💡", "Home Energy Saver": "🏠", "Zero Food Waste": "🍽️",
+  "7-Day Green Challenge": "🏅", "Bring a Friend": "🤝", "Conduct Sustainability Awareness Program": "📢", "Energy Saver": "💡", "Zero Food Waste": "🍽️",
   "E-Waste Recycling": "🔋", "Book or Notes Exchange": "📚", "Clothes Donation": "👕", "Green Commute": "🚌",
   "Walk or Cycle to College": "🚶", "Weekend Cycling": "🚲", "Reusable Bottle": "🧴", "Reusable Shopping Bag": "🛍️",
   "Waste Segregation": "🗑️", "Water Saver": "🚿" };
@@ -845,6 +845,16 @@ async function admin() {
       <span style="flex:1;min-width:150px"><label for="af">${S.filter[0]}</label><select id="af" onchange="renderQueue()"><option value="">All</option></select></span></div>
     <div id="bulk"></div><p id="msg" class="mute">Loading…</p><div id="q"></div></div>
   <div id="ls"></div>
+  <div class="card"><h3>➕ Add an activity</h3><p class="mute">It appears on the Earn XP page straight away.</p>
+    <label for="na_name">Activity name</label><input id="na_name" maxlength="80">
+    <label for="na_desc">What should students do?</label><textarea id="na_desc" rows="2" maxlength="500"></textarea>
+    <div class="row" style="flex-wrap:wrap;align-items:flex-end"><span style="flex:2;min-width:200px"><label for="na_cat">Category</label><select id="na_cat">${["Campus","Community","Energy","Food","Recycling","Reuse","Transport","Waste","Water"].map(c => `<option>${c}</option>`).join("")}</select></span>
+      <span style="flex:1;min-width:120px"><label for="na_xp">XP (1–100)</label><input id="na_xp" type="number" min="1" max="100" value="20"></span></div>
+    <label for="na_ver">How is it checked?</label><select id="na_ver"><option value="photo_admin">Student uploads a photo, admin approves</option><option value="self">Student marks it done (instant XP)</option></select>
+    <div class="row" style="flex-wrap:wrap;align-items:flex-end"><span style="flex:1;min-width:120px"><label for="na_lim">Times allowed</label><input id="na_lim" type="number" min="1" max="50" value="1"></span>
+      <span style="flex:2;min-width:200px"><label for="na_per">Per</label><select id="na_per"><option value="day">Day</option><option value="week">Week</option><option value="month" selected>Month</option><option value="total">Whole time (no reset)</option></select></span></div>
+    ${me.role === "super_admin" ? checkbox(`id="na_all"`, "Add to all institutions") : ""}
+    <p><button onclick="addActivity(this)">Add activity</button></p><p id="namsg"></p></div>
   <div class="card"><h3>🎓 Year-end certificates</h3><p class="mute">Issues certificates to members who reached the XP thresholds this academic year. Students who already have one are skipped.</p>
     <button class="o" onclick="issueAll()">Issue certificates</button><p id="cmsg" class="mute"></p></div>`;
   loadStats();
@@ -858,6 +868,18 @@ async function admin() {
     $("af").innerHTML += [...new Set(adminData.map(S.filter[1]))].sort().map(n => `<option>${esc(n)}</option>`).join("");
     renderQueue();
   } catch (e) { say(e.message, 1); }
+}
+async function addActivity(btn) {
+  const m = $("namsg"), all = !!$("na_all")?.checked, name = $("na_name").value.trim();
+  if (all && !confirm(`Add "${name}" to every institution?`)) return;
+  btn.disabled = true;
+  try {
+    const r = await api("/api/admin/activities", { name, description: $("na_desc").value.trim(), category: $("na_cat").value, xp: +$("na_xp").value,
+      verification: $("na_ver").value, limit: +$("na_lim").value, period: $("na_per").value, allColleges: all });
+    m.className = "mute"; m.textContent = `✅ ${name} added${r.added > 1 ? ` to ${r.added} institutions` : ""}.`;
+    $("na_name").value = $("na_desc").value = "";
+  } catch (e) { m.className = "err"; m.textContent = e.message; }
+  btn.disabled = false;
 }
 async function loadStats() {
   try {
