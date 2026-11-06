@@ -51,6 +51,19 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 .tbl::-webkit-scrollbar-track,.topscroll::-webkit-scrollbar-track{background:var(--line);border-radius:8px}
 .chip{display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .9rem;border:2px solid var(--line);border-radius:99px;cursor:pointer;font-weight:700}
 .chip input{width:auto;margin:0}.chip:has(input:checked){border-color:var(--pri);background:color-mix(in srgb,var(--pri) 18%,transparent)}
+.certwrap{overflow:auto;margin:.6rem 0}
+.cert{position:relative;width:297mm;height:210mm;background:#fff;color:#12312a;overflow:hidden;font-family:Georgia,"Times New Roman",serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.certbg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.certframe{position:absolute;inset:7mm;border:1.2mm double #19b37a}
+.certin{position:absolute;inset:16mm 22mm 14mm;display:flex;flex-direction:column;align-items:center;text-align:center}
+.certin h1{font-size:25pt;margin:0 0 1mm;color:#12312a}.certin .who{font-size:23pt;font-weight:700;margin:1.5mm 0}
+.certin p{margin:.8mm 0;font-size:11.5pt;color:#12312a}
+.certacts{width:100%;margin:2.5mm 0;columns:2;column-gap:10mm;font-size:9pt;text-align:left;flex:1;min-height:0;overflow:hidden}
+.certacts.many{columns:3;font-size:7.5pt}.certacts div{display:flex;justify-content:space-between;gap:3mm;break-inside:avoid;border-bottom:.2mm solid #cfe3da;padding:.5mm 0}
+.certfoot{width:100%;display:flex;justify-content:space-between;align-items:flex-end;font-size:9.5pt;text-align:left}
+.certsign{text-align:center;min-width:60mm}.certsign img{max-height:16mm;max-width:60mm;display:block;margin:0 auto}
+.certsign b{display:block;border-top:.3mm solid #12312a;padding-top:1mm}
+@media print{@page{size:A4 landscape;margin:0}body *{visibility:hidden}#certdoc,#certdoc *{visibility:visible}#certdoc{position:fixed;left:0;top:0;zoom:1!important}}
 .acticon{font-size:1.9rem;line-height:1;flex-shrink:0}
 .actgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem;align-items:start}.actgrid .card{margin:0}
 @media(max-width:1000px){.actgrid{grid-template-columns:minmax(0,1fr)}}
@@ -139,8 +152,9 @@ async function init() {
   me = r.profile;
   // Admins manage the college and go straight to their dashboard; the onboarding steps below are for students.
   if (["admin", "super_admin"].includes(me.role)) { $("tabs").hidden = false; return show("admin"); }
+  if (!me.college_id) return institutionScreen();
   if (!me.usn || !me.department) return profileScreen();
-  if (me.approval_status !== "approved") return approvalScreen();
+  if (me.approval_status === "rejected") return approvalScreen();
   me.survey = r.survey;
   if (!me.survey) return surveyScreen();
   // Only a membership for the current academic year unlocks the app.
@@ -158,12 +172,14 @@ async function authScreen() {
     <div class="row"><span style="flex:1"><label for="f_ci">City</label><select id="f_ci" onchange="pickInst(2)"></select></span>
       <span style="flex:1"><label for="f_pin">Pincode</label><select id="f_pin" onchange="pickInst(3)"></select></span></div>
     <label for="col">Institution</label><select id="col"></select>
+    <label style="display:flex;gap:.4rem;align-items:center;margin-top:.5rem"><input type="checkbox" id="notlisted" style="width:auto;margin:0" onchange="$('ni').hidden=!this.checked;$('col').disabled=this.checked"> My institution isn't in the list</label>
+    <div id="ni" hidden>${newInstFields()}</div>
     <label for="nm">Full name</label><input id="nm" autocomplete="name"></div>
   <label for="em">Email</label><input id="em" type="email" autocomplete="email">
   <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password">
   <p class="row" style="flex-wrap:wrap"><button id="go" onclick="login()">Log in</button>
     <a href="#" id="forgot" onclick="forgotPassword();return false" style="color:var(--prid);font-weight:700">Forgot password?</a></p><p id="msg"></p>
-  <p id="su_note" class="mute" hidden>Can't find your institution? Ask your college to contact the GreenXP team.</p></div>`;
+  <p><a href="#" onclick="help('authScreen');return false" style="color:var(--prid);font-weight:700">✉️ Have a question? Contact us</a></p></div>`;
   pickInst(0);
   showCounters();
 }
@@ -185,7 +201,7 @@ function pickInst(changed) {
 }
 function authMode(m) {
   const up = m === "signup";
-  $("su").hidden = $("su_note").hidden = !up;
+  $("su").hidden = !up;
   $("forgot").hidden = up;
   $("m_login").className = up ? "o" : ""; $("m_signup").className = up ? "" : "o";
   $("pw").autocomplete = up ? "new-password" : "current-password";
@@ -214,15 +230,47 @@ async function showCounters() {
   };
   requestAnimationFrame(step);
 }
+// An institution that isn't listed: asked for at sign-up, and created by the API after the student's first sign-in.
+const newInstFields = (v = {}) => `
+  <label for="ni_name">Institution name, exactly as on its website</label><input id="ni_name" maxlength="150" value="${esc(v.name)}">
+  <div class="row"><span style="flex:1"><label for="ni_city">City</label><input id="ni_city" maxlength="80" value="${esc(v.city)}"></span>
+    <span style="flex:1"><label for="ni_pin">Pincode</label><input id="ni_pin" inputmode="numeric" maxlength="6" placeholder="6 digits" value="${esc(v.pincode)}"></span></div>
+  <label for="ni_web">Institution website (optional)</label><input id="ni_web" type="url" maxlength="200" placeholder="https://" value="${esc(v.website)}">`;
+function readNewInst() {
+  const v = { name: $("ni_name").value.trim(), city: $("ni_city").value.trim(), pincode: $("ni_pin").value.trim(), website: $("ni_web").value.trim() };
+  if (v.name.length < 3) return "Enter your institution's name as it appears on its website.";
+  if (!v.city) return "Enter your institution's city.";
+  if (!/^[1-9][0-9]{5}$/.test(v.pincode)) return "Enter a valid 6-digit pincode.";
+  return v;
+}
+async function institutionScreen() {
+  $("tabs").hidden = true;
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem("gxp_new_inst")); } catch {}
+  if (saved) {
+    localStorage.removeItem("gxp_new_inst");
+    try { await api("/api/me/institution", saved); return init(); } catch {} // otherwise they can correct it below
+  }
+  $("app").innerHTML = `<h2>Your institution</h2><div class="card"><p class="mute">Tell us where you study.</p>${newInstFields(saved || {})}
+    <p><button onclick="saveInstitution()">Continue</button></p><p id="msg"></p><p><button class="o s" onclick="logout()">Log out</button></p></div>`;
+}
+async function saveInstitution() {
+  const v = readNewInst();
+  if (typeof v === "string") return say(v, 1);
+  try { await api("/api/me/institution", v); init(); } catch (e) { say(e.message, 1); }
+}
 async function signup() {
-  if (!$("col").value) return say("Select your institution.", 1);
+  const newInst = $("notlisted").checked ? readNewInst() : null;
+  if (typeof newInst === "string") return say(newInst, 1);
+  if (!newInst && !$("col").value) return say("Select your institution, or tick “My institution isn't in the list”.", 1);
   if (!$("nm").value.trim()) return say("Enter your full name.", 1);
   if ($("pw").value.length < 8) return say("Use a password of at least 8 characters.", 1);
   const email = $("em").value.trim().toLowerCase(), password = $("pw").value;
   try {
     await idp("SignUp", { Username: email, Password: password, UserAttributes: [{ Name: "email", Value: email },
-      { Name: "name", Value: $("nm").value.trim() }, { Name: "custom:college_id", Value: $("col").value }] });
+      { Name: "name", Value: $("nm").value.trim() }, ...(newInst ? [] : [{ Name: "custom:college_id", Value: $("col").value }])] });
   } catch (e) { return say(e.message, 1); }
+  try { newInst ? localStorage.setItem("gxp_new_inst", JSON.stringify(newInst)) : localStorage.removeItem("gxp_new_inst"); } catch {}
   codeScreen(email, password);
 }
 // After signing up (or logging in before confirming), the student types the code emailed to them.
@@ -307,12 +355,12 @@ async function saveNewPassword(email) {
 }
 function profileScreen() {
   $("tabs").hidden = true;
-  $("app").innerHTML = `<h2>Your details</h2><div class="card"><p class="mute">Your college admin checks these details before approving your account.</p>
+  $("app").innerHTML = `<h2>Your details</h2><div class="card"><p class="mute">These appear on your certificate, so please check them.</p>
   <label for="usn">USN</label><input id="usn" value="${esc(me.usn)}"><label for="dep">Department</label>
   <select id="dep">${["CSE","ISE","ECE","EEE","ME","Civil","AI/ML","Data Science","Aeronautical","Biotechnology","Chemical","MCA","MBA","Other"].map(d => `<option${me.department === d ? " selected" : ""}>${d}</option>`).join("")}</select>
   <label for="yr">Year</label><input id="yr" type="number" min="1" max="4" value="${me.year || 1}"><label for="ph">Mobile (never shown publicly)</label><input id="ph" value="${esc(me.phone)}">
   <label><input type="checkbox" id="ok" style="width:auto"> I accept the Terms, Privacy and Refund policies and understand points are not carbon credits.</label>
-  <p><button onclick="saveProfile()">${me.approval_status === "rejected" ? "Save and ask for review again" : "Continue"}</button></p><p id="msg"></p></div>`;
+  <p><button onclick="saveProfile()">Continue</button></p><p id="msg"></p></div>`;
 }
 async function saveProfile() {
   if (!$("usn").value.trim() || !$("ok").checked) return say("Add your USN and accept the terms.", 1);
@@ -322,109 +370,34 @@ async function saveProfile() {
 }
 function approvalScreen() {
   $("tabs").hidden = true;
-  const rejected = me.approval_status === "rejected";
-  $("app").innerHTML = `<h1>🌱 GreenXP</h1><div class="card">` + (rejected
-    ? `<h2>❌ Your account wasn't approved</h2>${me.approval_note ? `<p><b>Reason:</b> ${esc(me.approval_note)}</p>` : ""}
-       <p class="mute">If your details were wrong, fix them and ask for another review. Otherwise, contact your college's GreenXP admin.</p>
-       <p><button onclick="profileScreen()">Fix my details</button></p>`
-    : `<h2>⏳ Waiting for approval</h2><p>Thanks, ${esc((me.full_name || "").split(" ")[0] || "there")}! Your college's GreenXP admin will check your details and approve your account.</p>
-       <div class="row mute"><span>USN</span><b>${esc(me.usn)}</b></div><div class="row mute"><span>Department</span><span>${esc(me.department)} · Year ${me.year || "-"}</span></div>
-       <p class="mute">This usually takes a day or two. You'll be able to continue as soon as you're approved.</p>
-       <p><button onclick="init()">Check again</button> <button class="o" onclick="profileScreen()">Edit details</button></p>`) +
-    `<p><button class="o s" onclick="logout()">Log out</button></p></div>`;
+  $("app").innerHTML = `<h1>🌱 GreenXP</h1><div class="card"><h2>🚫 Your account has been blocked</h2>${me.approval_note ? `<p><b>Reason:</b> ${esc(me.approval_note)}</p>` : ""}
+    <p class="mute">If you think this is a mistake, contact us.</p><p><button onclick="help('approvalScreen')">Contact us</button></p><p><button class="o s" onclick="logout()">Log out</button></p></div>`;
 }
 
-// Baseline lifestyle questionnaire: [section, [[id, question, [[value, label], ...]], ...]]
-const SURVEY = [
-  ["🏠 Home", [
-    ["household", "How many people share your home (or hostel room)?", [["1","Just me"],["2","2"],["4","3–4"],["6","5 or more"]]],
-    ["residence", "Where do you live?", [["hostel","Hostel / PG"],["apartment","Apartment / flat"],["house","Independent house"]]]]],
-  ["🚌 Travel", [
-    ["mode", "How do you usually travel to college?", [["walk","Walk / cycle"],["public","Bus / metro / train"],["two","Two-wheeler"],["auto","Auto / cab"],["car","Car"]]],
-    ["distance", "Typical daily round-trip distance?", [["3","Under 5 km"],["10","5–15 km"],["22","15–30 km"],["40","Over 30 km"]]]]],
-  ["⚡ Energy", [
-    ["units", "Household electricity use per month?", [["75","Under 100 units (bill under ₹500)"],["150","100–200 units (₹500–1,200)"],["300","200–400 units (₹1,200–3,000)"],["500","Over 400 units (over ₹3,000)"],["0","Don't know"]]],
-    ["cooking", "Main cooking fuel where you eat?", [["lpg","LPG cylinder"],["png","Piped gas (PNG)"],["electric","Electric / induction"],["biomass","Wood / biomass"],["mess","I eat at a mess / canteen"]]]]],
-  ["🍽 Food", [
-    ["diet", "Which best describes your diet?", [["vegan","Vegan"],["veg","Vegetarian"],["egg","Vegetarian + eggs"],["nonveg_some","Non-veg a few times a week"],["nonveg_daily","Non-veg daily"]]],
-    ["waste", "How often is food wasted on your plate or at home?", [["rare","Rarely"],["sometimes","Sometimes"],["often","Often"]]],
-    ["delivery", "How often do you order food delivery?", [["rare","Rarely"],["weekly","About once a week"],["often","Several times a week"]]]]],
-  ["🛍 Shopping", [
-    ["clothes", "New clothes bought per year?", [["low","0–5 items"],["mid","6–15 items"],["high","16+ items"]]],
-    ["online", "Online orders per month?", [["low","0–2"],["mid","3–8"],["high","9+"]]],
-    ["devices", "How often do you replace your phone or laptop?", [["low","Every 4+ years"],["mid","Every 2–3 years"],["high","Every year"]]]]],
-  ["💧 Water & waste", [
-    ["bath", "How do you usually bathe?", [["bucket","Bucket"],["short","Shower, under 10 min"],["long","Shower, over 10 min"]]],
-    ["segregate", "Do you separate wet and dry waste?", [["always","Always"],["sometimes","Sometimes"],["never","Never"]]],
-    ["plastic", "How often do you use single-use plastic (bags, bottles, cups)?", [["rare","Rarely"],["sometimes","Sometimes"],["daily","Daily"]]]]]
-];
-// Footprint categories, with the tip and matching activity categories shown when it is one of a student's biggest.
-const CATS = {
-  Energy:    { label: "Energy", icon: "⚡", acts: ["Energy"], tip: "Switch off fans, lights and chargers when you leave a room, keep the AC at 24–26 °C, and pick LED and 5-star appliances." },
-  Transport: { label: "Transport", icon: "🚌", acts: ["Transport"], tip: "Walk, cycle or take the bus or metro for some trips, and share rides when you can't." },
-  Food:      { label: "Food", icon: "🍽", acts: ["Food"], tip: "Take only what you'll eat, try more plant-based meals, and cook or eat at the mess instead of ordering in." },
-  Shopping:  { label: "Shopping", icon: "🛍", acts: ["Reuse", "Recycling"], tip: "Buy fewer, longer-lasting clothes, repair before replacing, and recycle old electronics properly." },
-  Water:     { label: "Water & waste", icon: "💧", acts: ["Water", "Waste"], tip: "Use a bucket or keep showers short, segregate waste, and carry a reusable bottle and bag." }
-};
-const INDIA_AVG_T = 1.9; // approx. per-person tonnes CO2e per year in India
-const GRID = 0.71; // kg CO2 per kWh, Indian grid average
-// Rough yearly kg CO2e per person from the questionnaire, per logging category, using typical Indian emission factors.
-function baseline(a) {
-  const hh = +a.household;
-  const units = +a.units || { hostel: 40, apartment: 50, house: 70 }[a.residence] * hh; // "don't know": typical per-person use
-  const cook = { lpg: 340, png: 300, electric: 0, biomass: 400 }; // per household per year
-  return {
-    transport: +a.distance * 300 * { walk: 0, public: 0.03, two: 0.05, auto: 0.12, car: 0.17 }[a.mode], // ~300 travel days
-    electricity: units * 12 * GRID / hh,
-    cooking: a.cooking === "mess" ? 100 : cook[a.cooking] / hh,
-    food: { vegan: 700, veg: 900, egg: 1000, nonveg_some: 1200, nonveg_daily: 1600 }[a.diet]
-      + { rare: 0, sometimes: 50, often: 150 }[a.waste] + { rare: 0, weekly: 50, often: 150 }[a.delivery],
-    shopping: { low: 50, mid: 150, high: 350 }[a.clothes] + { low: 20, mid: 60, high: 150 }[a.online] + { low: 50, mid: 100, high: 250 }[a.devices],
-    waste: { bucket: 20, short: 40, long: 80 }[a.bath] + { always: 30, sometimes: 80, never: 150 }[a.segregate] + { rare: 10, sometimes: 40, daily: 100 }[a.plastic]
-  };
+// Questions go to the GreenXP inbox. back names the screen to return to; without it, this is the Help tab.
+const CONTACT_EMAIL = "greenxpglobal@gmail.com";
+function help(back) {
+  if (back) $("tabs").hidden = true;
+  $("app").innerHTML = `<h2>Ask us anything</h2><div class="card"><p class="mute">Send an enquiry or ask for clarification, and we'll reply by email. You can also write to <a href="mailto:${CONTACT_EMAIL}" style="color:var(--prid);font-weight:700">${CONTACT_EMAIL}</a>.</p>
+    <label for="q_name">Your name</label><input id="q_name" maxlength="100" autocomplete="name" value="${esc(me?.full_name)}">
+    <label for="q_mail">Your email</label><input id="q_mail" type="email" maxlength="200" autocomplete="email" value="${esc(me?.email)}">
+    <label for="q_text">Your question</label><textarea id="q_text" rows="5" maxlength="3000"></textarea>
+    <input id="q_co" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px">
+    <p><button id="q_go" onclick="sendEnquiry()">Send</button></p><p id="msg"></p>
+    ${back ? `<p><button class="o s" onclick="${back}()">Back</button></p>` : ""}</div>`;
 }
-// The questionnaire's own five-category view (stored with the survey and used for the admin averages).
-function footprint(a) {
-  const b = baseline(a);
-  const f = { Energy: b.electricity + b.cooking, Transport: b.transport, Food: b.food, Shopping: b.shopping, Water: b.waste };
-  for (const k in f) f[k] = Math.round(f[k]);
-  return f;
+async function sendEnquiry() {
+  const btn = $("q_go");
+  btn.disabled = true; say("Sending…");
+  try {
+    const r = await fetch(GXP.API_URL + "/api/public/enquiry", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: $("q_name").value, email: $("q_mail").value, message: $("q_text").value, company: $("q_co").value }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `Please email ${CONTACT_EMAIL} directly.`);
+    $("q_text").value = ""; say("✅ Sent. We'll reply to your email.");
+  } catch (e) { say(e.message, 1); }
+  btn.disabled = false;
 }
-function surveyScreen() {
-  const prev = me.survey?.answers || {};
-  $("app").innerHTML = `<h2>Your green baseline</h2><p class="mute">15 quick questions about your everyday life. We use them to estimate your carbon footprint and show where you can make the biggest difference.</p>` +
-    SURVEY.map(([title, qs]) => `<div class="card"><h3>${title}</h3>` + qs.map(([id, q, opts]) =>
-      `<label for="q_${id}">${q}</label><select id="q_${id}"><option value="">Choose…</option>${opts.map(([v, t]) => `<option value="${v}"${prev[id] === v ? " selected" : ""}>${t}</option>`).join("")}</select>`).join("") + `</div>`).join("") +
-    `<p><button onclick="saveSurvey()">See my analysis</button>${me.survey ? ` <button class="o" onclick="init()">Cancel</button>` : ""}</p><p id="msg"></p>`;
-}
-async function saveSurvey() {
-  const a = {};
-  for (const [, qs] of SURVEY) for (const [id] of qs) a[id] = $("q_" + id).value;
-  if (Object.values(a).some(v => !v)) return say("Please answer every question.", 1);
-  const f = footprint(a), total = Object.values(f).reduce((x, y) => x + y, 0);
-  try { me.survey = await api("/api/me/survey", { answers: a, footprint: f, total_kg: total }, "PUT"); }
-  catch (e) { return say(e.message, 1); }
-  analysisScreen();
-}
-async function analysisScreen() {
-  const f = me.survey.footprint, t = me.survey.total_kg / 1000;
-  const max = Math.max(1, ...Object.keys(CATS).map(k => f[k]));
-  const top = Object.keys(CATS).sort((x, y) => f[y] - f[x]).slice(0, 2);
-  const acts = await activitiesIn(top.flatMap(k => CATS[k].acts));
-  const diff = Math.round((t / INDIA_AVG_T - 1) * 100);
-  const cmp = Math.abs(diff) < 10 ? `About the same as India's average of ${INDIA_AVG_T} t per person.`
-    : `${Math.abs(diff)}% ${diff > 0 ? "above" : "below"} India's average of ${INDIA_AVG_T} t per person.`;
-  $("app").innerHTML = `<h2>Your footprint</h2><div class="card"><b style="font-size:1.8rem">${t.toFixed(1)} t CO₂e</b> <span class="mute">per year (estimate)</span><p class="mute">${cmp}</p>` +
-    Object.entries(CATS).map(([k, c]) => `<div class="row"><span>${c.icon} ${c.label}</span><b>${f[k]} kg</b></div><div class="bar" style="margin:.2rem 0 .7rem"><i style="width:${Math.round(f[k] / max * 100)}%"></i></div>`).join("") + `</div>
-    <h3>Where you can make the biggest difference</h3>` +
-    top.map(k => `<div class="card"><b>${CATS[k].icon} ${CATS[k].label}</b><p>${CATS[k].tip}</p>` +
-      (acts || []).filter(a => CATS[k].acts.includes(a.category)).map(a => `<span class="pill" style="display:inline-block;margin:.15rem 0">${esc(a.name)} +${a.xp_value} XP</span>`).join(" ") + `</div>`).join("") +
-    `<p class="mute" style="font-size:.8rem">A rough estimate from typical Indian emission factors, to show where your biggest impact is. It is not a certified measurement.</p>
-    <p><button onclick="init()">Continue</button> <button class="o" onclick="surveyScreen()">Retake questionnaire</button></p>`;
-}
-
-// Activities of the student's college in some categories, for the suggestions under the footprint.
-const activitiesIn = cats => api(`/api/activities?categories=${encodeURIComponent(cats.join(","))}`, null, "GET").catch(() => []);
 const UPI_ID = "mukhesharadhya@oksbi";
 async function payScreen(y) {
   $("tabs").hidden = true;
@@ -449,7 +422,8 @@ async function payScreen(y) {
     <h3>2. Tell us you've paid</h3><p class="mute">Give the transaction ID, or upload a screenshot of the payment, or both.</p>
     <label for="upiref">UPI transaction ID</label><input id="upiref" maxlength="40" autocomplete="off" placeholder="Usually 12 digits">
     <label for="upishot">Payment screenshot or PDF (up to 10 MB)</label><input id="upishot" type="file" accept="image/*,application/pdf,.heic,.heif,.pdf">
-    <p><button id="upigo" onclick="sendPayment()">I've paid</button></p><p id="msg"></p>${logout}</div>`;
+    <p><button id="upigo" onclick="sendPayment()">I've paid</button></p><p id="msg"></p>
+    <p><a href="#" onclick="help('init');return false" style="color:var(--prid);font-weight:700">✉️ Problem with your payment? Contact us</a></p>${logout}</div>`;
 }
 async function copyUpi(btn) {
   try { await navigator.clipboard.writeText(UPI_ID); btn.textContent = "Copied"; }
@@ -467,17 +441,17 @@ async function sendPayment() {
 }
 function show(t) {
   tab = t;
-  const T = ["admin","super_admin"].includes(me.role) ? [["admin","🛠 Admin"],["ranks","🏆 Ranks"]]
-    : [["home","🏠 Home"],["earn","⭐ Earn"],["fp","🌍 Footprint"],["ranks","🏆 Ranks"],["cert","🎓 Certificate"]];
+  const T = ["admin","super_admin"].includes(me.role) ? [["admin","🛠 Admin"],["ranks","🏆 Ranks"],["help","✉️ Help"]]
+    : [["home","🏠 Home"],["earn","⭐ Earn"],["fp","🌍 Footprint"],["ranks","🏆 Ranks"],["cert","🎓 Certificate"],["help","✉️ Help"]];
   $("tabs").innerHTML = T.map(x => `<button class="${x[0]==t?"on":""}" onclick="show('${x[0]}')">${x[1]}</button>`).join("") + `<button onclick="logout()">Out</button>`;
   $("app").classList.toggle("wide", ["admin", "earn"].includes(t));
-  ({ home, earn, fp, ranks, cert, admin })[t]();
+  ({ home, earn, fp, ranks, cert, admin, help: () => help() })[t]();
 }
 async function home() {
   const s = await api("/api/me/xp", null, "GET").catch(() => ({ earned: 0, spendable: 0, year_earned: 0 }));
   const e = +s.earned, l = [...LV].reverse().find(x => e >= x[0]), n = LV.find(x => x[0] > e), p = n ? Math.round((e - l[0]) / (n[0] - l[0]) * 100) : 100;
   $("app").innerHTML = `<h2>Hi ${esc((me.full_name||"").split(" ")[0])} ${l[2]}</h2><div class="card"><div class="row"><b style="font-size:1.8rem">${e} XP</b><span class="pill">${l[1]}</span></div>
-  <div class="bar" style="margin:.6rem 0"><i style="width:${p}%"></i></div><span class="mute">${n ? n[0]-e+" XP to "+n[1] : "Top level"} · ${s.spendable} XP to spend · ${s.year_earned} XP this year</span></div>
+  <div class="bar" style="margin:.6rem 0"><i style="width:${p}%"></i></div><span class="mute">${n ? n[0]-e+" XP to "+n[1] : "Top level"} · ${s.spendable} XP to spend · ${s.year_earned} XP this year</span><br><span class="mute">Registration ID: <b>${esc(me.registration_id)}</b></span></div>
   ${me.survey ? `<div class="card"><div class="row"><span>🌍 Your footprint</span><b>${(me.survey.total_kg / 1000).toFixed(1)} t CO₂e / year</b></div><p class="mute">From your questionnaire. Log your real travel, bills and meals for a more accurate figure.</p><p><button class="s" onclick="show('fp')">Open footprint dashboard</button></p></div>` : ""}
   <p class="mute">GreenXP points are reward points, not carbon credits or money.</p>`;
 }
@@ -784,8 +758,33 @@ async function ranks() {
 async function cert() {
   const data = await api("/api/me/certificates", null, "GET").catch(() => []);
   $("app").innerHTML = `<h2>Annual certificate</h2>` + ((data||[]).map(c => `<div class="card" style="text-align:center;border:3px double var(--pri)"><div class="mute">GreenXP</div><h2>Certificate of ${esc(c.tier)}</h2><p>${esc(me.full_name)} · ${esc(me.usn)}</p>
-  <p>${c.xp_earned} verified XP · ${c.activities_count} activities · est. ${c.estimated_co2e} kg CO₂e*</p><b>ID: ${esc(c.certificate_code)}</b><p class="mute" style="font-size:.75rem">*Estimate based on GreenXP's methodology. Points are not carbon credits.</p><button class="s" onclick="window.print()">Print / save as PDF</button></div>`).join("") || `<p class="mute">Certificates are issued at year end for students with 100+ verified XP.</p>`) +
+  <p>${c.xp_earned} verified XP · ${c.activities_count} activities · est. ${c.estimated_co2e} kg CO₂e*</p><b>ID: ${esc(c.certificate_code)}</b><p class="mute" style="font-size:.75rem">*Estimate based on GreenXP's methodology. Points are not carbon credits.</p><button class="s" onclick="certView('${esc(c.id)}')">View and print certificate</button></div>`).join("") || `<p class="mute">Certificates are issued at year end for students with 200+ verified XP.</p>`) +
   `<h3>Verify a certificate</h3><div class="card"><input id="vc" placeholder="Certificate ID"><button class="s" onclick="verifyCert()">Verify</button><p id="vr"></p></div>`;
+}
+// The certificate as printed: one A4 landscape sheet, on the admin's template if there is one.
+function certHtml(d) {
+  const t = d.template || {}, date = new Date(d.issued_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+  return `<div class="certwrap"><div id="certdoc" class="cert">
+    ${t.background_url ? `<img class="certbg" src="${esc(t.background_url)}" alt="">` : `<div class="certframe"></div>`}
+    <div class="certin"><h1>Certificate of ${esc(d.tier)}</h1><p>This is to certify that</p>
+      <div class="who">${esc(d.student_name)}</div>
+      <p>of <b>${esc(d.institution)}</b>${d.city ? ", " + esc(d.city) : ""}</p>
+      <p>USN: <b>${esc(d.usn)}</b> &nbsp;·&nbsp; GreenXP registration ID: <b>${esc(d.registration_id)}</b></p>
+      <p>has earned <b>${d.xp_earned} verified XP</b> in the academic year ${esc(d.academic_year)} through these activities:</p>
+      <div class="certacts${d.activities.length > 16 ? " many" : ""}">${d.activities.map(a => `<div><span>${esc(a.name)}${a.times > 1 ? ` × ${a.times}` : ""}</span><b>${a.xp} XP</b></div>`).join("")}</div>
+      <div class="certfoot"><div>Date of issue: <b>${esc(date)}</b><br>Certificate ID: <b>${esc(d.certificate_code)}</b><br>Verify at greenxp.in</div>
+        <div class="certsign">${t.signature_url ? `<img src="${esc(t.signature_url)}" alt="Signature">` : ""}<b>${esc(t.signatory_name || "Authorised signatory")}</b>${esc(t.signatory_title)}</div></div>
+    </div></div></div>`;
+}
+// The sheet is a fixed A4 size; on screen it shrinks to fit, and printing resets it to full size.
+const fitCert = () => { const c = $("certdoc"); c.style.zoom = Math.min(1, c.parentElement.clientWidth / c.offsetWidth); };
+async function certView(id) {
+  try {
+    const d = await api(`/api/me/certificates/${id}/document`, null, "GET");
+    $("app").classList.add("wide");
+    $("app").innerHTML = `<div class="row"><button class="s o" onclick="show('cert')">Back</button><button class="s" onclick="window.print()">Print / save as PDF</button></div>` + certHtml(d);
+    fitCert();
+  } catch (e) { alert(e.message); }
 }
 async function verifyCert() {
   const code = $("vc").value.trim(), r = code && await pub(`/api/public/certificates/${encodeURIComponent(code)}`);
@@ -797,16 +796,16 @@ const ago = t => {
   return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`;
 };
 const checkbox = (attrs, label) => `<label style="display:flex;gap:.4rem;align-items:center"><input type="checkbox" style="width:auto;margin:0" ${attrs}> ${label}</label>`;
-// Each section is one approval queue: where it loads from, how items are filtered and shown, and what rejecting means.
+// Each section is one list to act on: where it loads from, how items are filtered and shown, and what rejecting means.
 const SECTIONS = {
   users: {
-    title: "👤 New users", noun: ["user", "users"],
-    views: [["pending", "⏳ Waiting"], ["approved", "✅ Approved"], ["rejected", "❌ Rejected"]],
+    title: "👤 Students", noun: ["student", "students"],
+    views: [["pending", "👥 Students"], ["rejected", "🚫 Blocked"]],
     list: v => `/api/admin/users?status=${v}`, review: "/api/admin/users/review",
     filter: ["Department", u => u.department || "Details not filled in"],
-    empty: { pending: "No new users waiting. 🎉", approved: "No approved users yet.", rejected: "No rejected users." },
+    empty: { pending: "No students yet.", rejected: "No blocked students." },
     reasons: ["USN doesn't match our records", "Not a student of this college", "Incomplete or incorrect details", "Duplicate account"],
-    approveMsg: n => `Approve ${n} users? They can then pay and use GreenXP.`, doneMsg: (n, ok) => `${n} user${n > 1 ? "s" : ""} ${ok ? "approved" : "rejected"}.`,
+    approveMsg: n => `Unblock ${n} students?`, doneMsg: (n, ok) => `${n} student${n > 1 ? "s" : ""} ${ok ? "updated" : "blocked"}.`,
     search: u => [u.full_name, u.email, u.usn, u.phone].join(" "), placeholder: "Search name, email, USN or mobile",
     table: userTable
   },
@@ -864,8 +863,15 @@ async function admin() {
       <span style="flex:2;min-width:200px"><label for="na_per">Per</label><select id="na_per"><option value="day">Day</option><option value="week">Week</option><option value="month" selected>Month</option><option value="total">Whole time (no reset)</option></select></span></div>
     ${me.role === "super_admin" ? checkbox(`id="na_all"`, "Add to all institutions") : ""}
     <p><button onclick="addActivity(this)">Add activity</button></p><p id="namsg"></p></div>
-  <div class="card"><h3>🎓 Year-end certificates</h3><p class="mute">Issues certificates to members who reached the XP thresholds this academic year. Students who already have one are skipped.</p>
-    <button class="o" onclick="issueAll()">Issue certificates</button><p id="cmsg" class="mute"></p></div>`;
+  <div class="card"><h3>🎓 Year-end certificates</h3><p class="mute">Issues certificates to members with at least 200 XP this academic year${me.role === "super_admin" ? ", at every institution" : ""}. Students who already have one are skipped.</p>
+    <button class="o" onclick="issueAll()">Issue certificates</button><p id="cmsg" class="mute"></p></div>
+  <div class="card"><h3>🖼 Certificate template</h3><p class="mute">Use an A4 landscape image with the middle left clear: the student's details, activities and signature are printed on top of it. Without one, a plain green border is used.</p>
+    <label for="ct_bg">Template image (JPG, PNG or WebP)</label><input id="ct_bg" type="file" accept="image/jpeg,image/png,image/webp"><p id="ct_bgs" class="mute" style="margin:.2rem 0"></p>
+    <label for="ct_sig">Signature image (a PNG with a transparent background works best)</label><input id="ct_sig" type="file" accept="image/jpeg,image/png,image/webp"><p id="ct_sigs" class="mute" style="margin:.2rem 0"></p>
+    <label for="ct_name">Name of the issuing authority</label><input id="ct_name" maxlength="80">
+    <label for="ct_title">Their title</label><input id="ct_title" maxlength="120" placeholder="e.g. Director, GreenXP">
+    <p><button onclick="saveTemplate(this)">Save template</button> <button class="o" onclick="certPreview()">Preview</button></p><p id="ctmsg"></p></div>`;
+  loadTemplate();
   loadStats();
   api("/api/admin/lifestyle-summary", null, "GET").catch(() => null).then(s => {
     if (!s || !s.responses || !$("ls")) return;
@@ -877,6 +883,33 @@ async function admin() {
     $("af").innerHTML += [...new Set(adminData.map(S.filter[1]))].sort().map(n => `<option>${esc(n)}</option>`).join("");
     renderQueue();
   } catch (e) { say(e.message, 1); }
+}
+async function loadTemplate() {
+  const t = await api("/api/admin/certificate-template", null, "GET").catch(() => null);
+  if (!t || !$("ct_name")) return;
+  $("ct_name").value = t.signatory_name; $("ct_title").value = t.signatory_title;
+  $("ct_bgs").textContent = t.background_url ? "✅ Template uploaded. Choose a file to replace it." : "No template yet.";
+  $("ct_sigs").textContent = t.signature_url ? "✅ Signature uploaded. Choose a file to replace it." : "No signature yet.";
+}
+async function saveTemplate(btn) {
+  const m = $("ctmsg"), bg = $("ct_bg").files[0], sig = $("ct_sig").files[0];
+  btn.disabled = true; m.className = "mute"; m.textContent = "Saving…";
+  try {
+    await api("/api/admin/certificate-template", { signatoryName: $("ct_name").value, signatoryTitle: $("ct_title").value,
+      backgroundPath: bg ? await upload("certificates", bg) : null, signaturePath: sig ? await upload("certificates", sig) : null }, "PUT");
+    $("ct_bg").value = $("ct_sig").value = ""; m.textContent = "✅ Saved."; loadTemplate();
+  } catch (e) { m.className = "err"; m.textContent = e.message; }
+  btn.disabled = false;
+}
+async function certPreview() {
+  try {
+    const template = await api("/api/admin/certificate-template", null, "GET");
+    $("app").innerHTML = `<div class="row"><button class="s o" onclick="show('admin')">Back</button><button class="s" onclick="window.print()">Print</button></div><p class="mute">Sample details, to check the layout.</p>` + certHtml({ template,
+      tier: "Gold", student_name: "Sample Student", institution: "Sample Institute of Technology", city: "Bengaluru", usn: "1SI23CS001", registration_id: "GXP000123", xp_earned: 320,
+      academic_year: "2026-27", issued_at: new Date().toISOString(), certificate_code: "A1B2C3D4E5F6",
+      activities: [{ name: "Tree planting", times: 3, xp: 150 }, { name: "Cycle to campus", times: 12, xp: 120 }, { name: "Sustainability awareness program", times: 1, xp: 50 }] });
+    fitCert();
+  } catch (e) { $("ctmsg").className = "err"; $("ctmsg").textContent = e.message; }
 }
 async function addActivity(btn) {
   const m = $("namsg"), all = !!$("na_all")?.checked, name = $("na_name").value.trim();
@@ -893,9 +926,9 @@ async function addActivity(btn) {
 async function loadStats() {
   try {
     const s = await api("/api/admin/stats", null, "GET");
-    $("stats").innerHTML = [["New users waiting", s.usersPending], ["Activities waiting", s.pending], ["Activities approved (7 days)", s.approvedWeek], ["Active members", `${s.members} / ${s.students}`]]
+    $("stats").innerHTML = [["Activities waiting", s.pending], ["Activities approved (7 days)", s.approvedWeek], ["Active members", `${s.members} / ${s.students}`]]
       .map(([t, v]) => `<div class="stat"><b>${v}</b><span class="mute">${t}</span></div>`).join("");
-    for (const [k, n] of [["users", s.usersPending], ["activities", s.pending], ["payments", s.paymentsPending]]) { const b = $("n_" + k); if (b) { b.textContent = n; b.hidden = !n; } }
+    for (const [k, n] of [["activities", s.pending], ["payments", s.paymentsPending]]) { const b = $("n_" + k); if (b) { b.textContent = n; b.hidden = !n; } }
   } catch (e) { $("stats").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
 }
 const shown = () => {
@@ -917,9 +950,9 @@ function renderQueue() {
 function renderBulkBar(list = shown()) {
   $("bulk").innerHTML = adminView === "pending" && list.length ? `<div class="row" style="margin:.3rem 0 .6rem;flex-wrap:wrap">
     ${checkbox(`id="selall" onchange="selectAll(this.checked)"${adminSel.size === list.length ? " checked" : ""}`, `Select all (${list.length})`)}
-    <span><button class="s" onclick="reviewMany(true)"${adminSel.size ? "" : " disabled"}>Approve selected${adminSel.size ? ` (${adminSel.size})` : ""}</button>
-    ${adminSection === "users" ? `<button class="s" onclick="reviewMany(true,undefined,true)"${adminSel.size ? "" : " disabled"} title="Approve and waive this year's fee">Approve + free year</button>` : ""}
-    <button class="s o" onclick="reviewMany(false)"${adminSel.size ? "" : " disabled"}>Reject selected</button></span></div>` : "";
+    <span>${adminSection === "users" ? `<button class="s" onclick="reviewMany(true,undefined,true)"${adminSel.size ? "" : " disabled"} title="Waive this year's fee">Free year${adminSel.size ? ` (${adminSel.size})` : ""}</button>`
+      : `<button class="s" onclick="reviewMany(true)"${adminSel.size ? "" : " disabled"}>Approve selected${adminSel.size ? ` (${adminSel.size})` : ""}</button>`}
+    <button class="s o" onclick="reviewMany(false)"${adminSel.size ? "" : " disabled"}>${adminSection === "users" ? "Block" : "Reject"} selected</button></span></div>` : "";
 }
 // New users as a table: select box and name frozen on the left, details scroll sideways.
 function userTable(list, pending) {
@@ -936,8 +969,8 @@ function userTable(list, pending) {
     <td class="n">${u.year || "—"}</td><td>${u.phone ? esc(u.phone) : `<span class="mute">—</span>`}</td>
     ${pending
       ? `<td title="${esc(new Date(u.created_at).toLocaleString("en-IN"))}">${ago(u.created_at)}</td>
-         <td class="acts"><button class="s" onclick="reviewMany(true,['${u.id}'])">Approve</button> <button class="s o" onclick="reviewMany(false,['${u.id}'])">Reject</button></td>`
-      : `<td>${u.approval_status === "approved" ? "✅ Approved" : "❌ Rejected"} ${u.approved_at ? ago(u.approved_at) : ""}${u.approver ? `<br><span class="mute" style="font-size:.8rem">by ${esc(u.approver.full_name)}</span>` : ""}</td>
+         <td class="acts"><button class="s" onclick="reviewMany(true,['${u.id}'],true)">Free year</button> <button class="s o" onclick="reviewMany(false,['${u.id}'])">Block</button></td>`
+      : `<td>🚫 Blocked ${u.approved_at ? ago(u.approved_at) : ""}${u.approver ? `<br><span class="mute" style="font-size:.8rem">by ${esc(u.approver.full_name)}</span>` : ""}<br><button class="s o" onclick="reviewMany(true,['${u.id}'])">Unblock</button></td>
          <td style="white-space:normal;min-width:180px">${u.approval_note ? esc(u.approval_note) : `<span class="mute">—</span>`}</td>`}</tr>`).join("") +
   `</tbody></table></div>`;
 }
@@ -992,7 +1025,7 @@ async function reviewMany(approve, ids = [...adminSel], waive = false) {
   if (!ids.length) return;
   let reason = null;
   if (!approve) { reason = await askReason(S.reasons); if (reason == null) return; }
-  else if (waive) { if (!confirm(`Approve ${ids.length} user${ids.length > 1 ? "s" : ""} and waive this year's fee? They can use GreenXP without paying.`)) return; }
+  else if (waive) { if (!confirm(`Waive this year's fee for ${ids.length} student${ids.length > 1 ? "s" : ""}? They can use GreenXP without paying.`)) return; }
   else if (ids.length > 1 && !confirm(S.approveMsg(ids.length))) return;
   try {
     const r = await api(S.review, { ids, approve, reason, waive });
@@ -1054,7 +1087,7 @@ function renderInstTable() {
   $("q").innerHTML = `<p class="mute" style="font-size:.8rem;margin:.2rem 0">◀ Scroll sideways for more columns – the institution name stays in place ▶</p>
     <div class="topscroll" id="itop"><div></div></div>
     <div class="tbl freeze" id="itbl"><table>
-    <thead><tr><th class="fz1">#</th><th class="fz2">Institution</th><th>City</th><th>State</th><th>Pincode</th><th class="n">Students</th><th class="n">Waiting</th><th>Admins</th><th>Status</th><th>Actions</th></tr></thead>
+    <thead><tr><th class="fz1">#</th><th class="fz2">Institution</th><th>City</th><th>State</th><th>Pincode</th><th class="n">Students</th><th>Admins</th><th>Status</th><th>Actions</th></tr></thead>
     <tbody>${rows.map((c, i) => instRow(c, i + 1)).join("")}</tbody></table></div>`;
   syncTopScroll();
 }
@@ -1071,9 +1104,9 @@ function syncTopScroll(topId = "itop", tblId = "itbl") {
 function instRow(c, n) {
   const own = c.id === me.college_id;
   return `<tr id="ir_${c.id}"><td class="mute fz1">${n}</td>
-  <td class="fz2"><b>${esc(c.name)}</b>${own ? `<br><span class="mute" style="font-size:.8rem">your institution</span>` : ""}</td>
+  <td class="fz2"><b>${esc(c.name)}</b>${own ? `<br><span class="mute" style="font-size:.8rem">your institution</span>` : ""}${c.added_by ? `<br><span class="mute" style="font-size:.8rem">added by a student – check it, then switch it on</span>` : ""}${c.website ? `<br><a href="${esc(c.website)}" target="_blank" rel="noopener" style="color:var(--prid);font-size:.8rem">website</a>` : ""}</td>
   ${[c.city, c.state, c.pincode].map(v => `<td>${v ? esc(v) : `<span class="warn" style="padding:.1rem .4rem">missing</span>`}</td>`).join("")}
-  <td class="n">${c.students}</td><td class="n">${c.waiting || "—"}</td>
+  <td class="n">${c.students}</td>
   <td style="font-size:.85rem">${c.admins.length ? c.admins.map(esc).join("<br>") : `<span class="mute">None</span>`}</td>
   <td><span class="pill"${c.active ? "" : ` style="background:var(--line);color:var(--mute)"`}>${c.active ? "Active" : "Off"}</span></td>
   <td class="acts"><button class="s o" onclick="editInst('${c.id}')">Edit</button> <button class="s o" onclick="makeAdmin('${c.id}')">+ Admin</button>

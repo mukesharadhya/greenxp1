@@ -7,7 +7,7 @@ const money = (amount, currency) => new Intl.NumberFormat("en-IN", { style: "cur
 // Builds one message. lines are plain text (escaped here, so names and admins' reasons can't inject HTML);
 // the button is the site, since every email asks the student to sign in or just tells them something happened.
 function message(to, subject, lines, site, button) {
-  const paragraphs = lines.map((l) => `<p style="margin:0 0 14px;line-height:1.5">${esc(l)}</p>`).join("");
+  const paragraphs = lines.map((l) => `<p style="margin:0 0 14px;line-height:1.5;white-space:pre-wrap">${esc(l)}</p>`).join("");
   const action = button ? `<p style="margin:22px 0 6px"><a href="${esc(site)}" style="background:#15803d;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:600">${esc(button)}</a></p>` : "";
   return {
     to: [to], subject,
@@ -18,17 +18,19 @@ function message(to, subject, lines, site, button) {
 }
 
 export const templates = (site) => ({
-  accountApproved: (u, feeWaived) => message(u.email, "Your GreenXP account is approved", [
+  accountActive: (u, feeWaived) => message(u.email, feeWaived ? "Your GreenXP fee has been waived" : "Your GreenXP account is active", [
     `Hi ${firstName(u)},`,
-    feeWaived ? "Your college admin has approved your account and waived this year's membership fee. You can start logging activities now."
-      : "Your college admin has approved your account. Sign in to pay your membership fee and start logging activities.",
+    feeWaived ? "Your college admin has waived this year's membership fee. You can start logging activities now."
+      : "Your college admin has unblocked your account. You can sign in again.",
   ], site, "Open GreenXP"),
-  accountRejected: (u, reason) => message(u.email, "Your GreenXP account wasn't approved", [
+  accountBlocked: (u, reason) => message(u.email, "Your GreenXP account has been blocked", [
     `Hi ${firstName(u)},`,
-    "Your college admin didn't approve your account.",
+    "Your college admin has blocked your account.",
     `Reason: ${reason}`,
-    "If something in your details was wrong, sign in and correct them to ask for another review.",
-  ], site, "Open GreenXP"),
+    "If you think this is a mistake, please write to greenxpglobal@gmail.com.",
+  ], site),
+  enquiry: (q) => ({ ...message("greenxpglobal@gmail.com", `GreenXP enquiry from ${q.name.replace(/\s+/g, " ").slice(0, 60)}`,
+    [`From: ${q.name} (${q.email})`, q.message], site), reply_to: q.email }),
   paymentReceipt: (u, pay) => message(u.email, "Your GreenXP membership receipt", [
     `Hi ${firstName(u)},`,
     `We've confirmed your payment of ${money(pay.amount, pay.currency)}, and your membership for this academic year is active.`,

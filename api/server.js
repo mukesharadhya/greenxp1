@@ -73,6 +73,7 @@ const anthropic = env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: env.ANTHROPIC_
 const mailer = createMailer({ apiKey: env.RESEND_API_KEY, from: env.EMAIL_FROM || "GreenXP <noreply@greenxp.in>" });
 const mail = templates(FRONTEND_URL || "https://greenxp.in");
 const app = express();
+app.set("trust proxy", "loopback"); // Caddy, on the same server, says who the visitor is
 if (FRONTEND_URL) app.use(cors({ origin: FRONTEND_URL }));
 const isId = (s) => typeof s === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 // Every async handler and middleware goes through wrap: in Express 4 an uncaught rejection would kill the process.
@@ -135,10 +136,10 @@ const auth = wrap(async (req, res, next) => {
 });
 const admin = (req, res, next) =>
   ["admin", "super_admin"].includes(req.profile.role) ? next() : res.status(403).json({ error: "Admins only" });
-// Students can pay and take part only after a college admin approves their account.
+// Verifying their email is enough for students; only an account an admin has blocked is kept out.
 const approved = (req, res, next) =>
-  req.profile.role !== "student" || req.profile.approval_status === "approved" ? next()
-    : res.status(403).json({ error: "Your account is waiting for approval from your college admin" });
+  req.profile.role !== "student" || req.profile.approval_status !== "rejected" ? next()
+    : res.status(403).json({ error: "Your account has been blocked. Please contact greenxpglobal@gmail.com." });
 
 // 1. The signed-in student's own data. These run as the user, so row-level security applies.
 app.get("/api/me", auth, wrap(async (req, res) => {
@@ -153,11 +154,8 @@ app.get("/api/me", auth, wrap(async (req, res) => {
 app.post("/api/me/profile", auth, wrap(async (req, res) => {
   const { usn, department, year, phone } = req.body;
   try {
-    await asUser(req.profile.id, async (sql) => {
-      await sql("update public.profiles set usn = $1, department = $2, year = $3, phone = $4 where id = auth.uid()",
-        [String(usn || "").trim(), String(department || ""), Number(year) || null, String(phone || "")]);
-      if (req.profile.approval_status === "rejected") await sql("select public.request_reapproval()");
-    });
+    await asUser(req.profile.id, (sql) => sql("update public.profiles set usn = $1, department = $2, year = $3, phone = $4 where id = auth.uid()",
+      [String(usn || "").trim(), String(department || ""), Number(year) || null, String(phone || "")]));
   } catch (e) {
     return res.status(400).json({ error: e.code === "23505" ? "That USN is already registered. Check it, or contact your college admin." : userError(e) });
   }
@@ -224,13 +222,16 @@ app.delete("/api/footprint-logs/:id", auth, wrap(async (req, res) => {
 const UPLOAD_TYPES = {
   proofs: { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/heic": "heic", "image/heif": "heif" },
   bills: { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "application/pdf": "pdf" },
+  certificates: { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" }, // admins' template and signature
   payments: { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "image/bmp": "bmp", "image/avif": "avif",
     "image/heic": "heic", "image/heif": "heif", "application/pdf": "pdf" },
 };
 app.post("/api/uploads", auth, approved, wrap(async (req, res) => {
   const { bucket, contentType } = req.body, ext = UPLOAD_TYPES[bucket]?.[contentType];
+  if (bucket === "certificates" && req.profile.role === "student") return res.status(403).json({ error: "Admins only" });
   if (!ext) return res.status(400).json({ error: bucket === "bills" ? "Please upload a JPG, PNG, WebP or PDF." :
-    bucket === "payments" ? "Please upload an image (JPG, PNG, HEIC…) or a PDF." : "Please choose a JPG, PNG, WebP or HEIC photo." });
+    bucket === "payments" ? "Please upload an image (JPG, PNG, HEIC…) or a PDF." :
+    bucket === "certificates" ? "Please upload a JPG, PNG or WebP image." : "Please choose a JPG, PNG, WebP or HEIC photo." });
   const path = `${req.profile.id}/${crypto.randomUUID()}.${ext}`;
   const form = await createPresignedPost(s3, { Bucket: UPLOADS_BUCKET, Key: `${bucket}/${path}`, Expires: 300,
     Fields: { "Content-Type": contentType }, Conditions: [["content-length-range", 1, 10 * 1024 * 1024]] });
@@ -322,9 +323,9 @@ const reviewScope = (p) => p.role === "super_admin" ? null : p.college_id;
 
 app.get("/api/admin/stats", auth, admin, wrap(async (req, res) => {
   res.json(await one(`select
-    (select count(*) from public.profiles where ($2::uuid is null or college_id = $2) and role = 'student' and approval_status = 'pending') "usersPending",
     (select count(*) from public.payments where status = 'submitted') "paymentsPending",
-    count(*) filter (where s.verification_status = 'pending') pending,
+    (select count(*) from public.activity_submissions ws join public.profiles wp on wp.id = ws.user_id
+      where ws.verification_status = 'pending' and ($2::uuid is null or wp.college_id = $2)) pending,
     count(*) filter (where s.verification_status = 'verified' and s.verified_by is not null and s.verified_at >= now() - interval '7 days') "approvedWeek",
     count(*) filter (where s.verification_status = 'rejected' and s.verified_at >= now() - interval '7 days') "rejectedWeek",
     (select count(*) from public.memberships m join public.profiles mp on mp.id = m.user_id where mp.college_id = $1 and m.status in ('active', 'waived')) members,
@@ -361,14 +362,14 @@ app.post("/api/admin/activities", auth, admin, wrap(async (req, res) => {
   res.json({ added: rows.length });
 }));
 
-// New users: students of the admin's college by approval status, newest first.
+// Students of the admin's college, newest first: everyone who can use GreenXP, or those blocked.
 app.get("/api/admin/users", auth, admin, wrap(async (req, res) => {
-  const status = ["pending", "approved", "rejected"].includes(req.query.status) ? req.query.status : "pending";
+  const blocked = req.query.status === "rejected";
   res.json(await q(`select u.id, u.email, u.full_name, u.usn, u.department, u.year, u.phone, u.created_at, u.approval_status,
       u.approval_note, u.approved_at, c.name college, case when u.approved_by is not null then json_build_object('full_name', r.full_name) end approver
     from public.profiles u left join public.profiles r on r.id = u.approved_by left join public.colleges c on c.id = u.college_id
-    where ($1::uuid is null or u.college_id = $1) and u.role = 'student' and u.approval_status = $2
-    order by ${status === "pending" ? "u.created_at" : "u.approved_at desc"} limit 200`, [reviewScope(req.profile), status]));
+    where ($1::uuid is null or u.college_id = $1) and u.role = 'student' and (u.approval_status = 'rejected') = $2
+    order by ${blocked ? "u.approved_at" : "u.created_at"} desc limit 200`, [reviewScope(req.profile), blocked]));
 }));
 
 app.post("/api/admin/users/review", auth, admin, wrap(async (req, res) => {
@@ -392,7 +393,7 @@ app.post("/api/admin/users/review", auth, admin, wrap(async (req, res) => {
       [rows.map((u) => u.id), req.user.id]);
     return rows;
   });
-  mailer.notify(() => done.map((u) => approve ? mail.accountApproved(u, waive) : mail.accountRejected(u, note)));
+  mailer.notify(() => done.map((u) => approve ? mail.accountActive(u, waive) : mail.accountBlocked(u, note)));
   res.json({ done: done.length, failed: ids.filter((id) => !done.some((u) => u.id === id)).map((id) => ({ id, error: "Not a student of your college" })) });
 }));
 
@@ -406,8 +407,8 @@ app.get("/api/admin/submissions", auth, admin, wrap(async (req, res) => {
     join public.activities a on a.id = s.activity_id
     join public.profiles st on st.id = s.user_id
     left join public.profiles rv on rv.id = s.verified_by
-    where s.verification_status = $1 and st.college_id = $2 ${status === "verified" ? "and s.verified_by is not null" : ""}
-    order by ${status === "pending" ? "s.submitted_at" : "s.verified_at desc"} limit 100`, [status, req.profile.college_id]);
+    where s.verification_status = $1 and ($2::uuid is null or st.college_id = $2) ${status === "verified" ? "and s.verified_by is not null" : ""}
+    order by ${status === "pending" ? "s.submitted_at" : "s.verified_at desc"} limit 100`, [status, reviewScope(req.profile)]);
 
   await Promise.all(data.filter((s) => s.proof_path).map(async (s) => {
     s.proof_url = await getSignedUrl(s3, new GetObjectCommand({ Bucket: UPLOADS_BUCKET, Key: `proofs/${s.proof_path}` }), { expiresIn: 600 });
@@ -464,7 +465,7 @@ app.post("/api/admin/certificates/issue", auth, admin, wrap(async (req, res) => 
   try { issued = (await one("select public.issue_certificates($1) n", [req.user.id])).n; }
   catch (e) { return res.status(400).json({ error: userError(e) }); }
   if (issued) mailer.notify(async () => (await q(`select p.email, p.full_name, c.tier, c.xp_earned, c.certificate_code from public.certificates c
-    join public.profiles p on p.id = c.user_id where p.college_id = $1 and c.issued_at >= $2`, [req.profile.college_id, since]))
+    join public.profiles p on p.id = c.user_id where ($1::uuid is null or p.college_id = $1) and c.issued_at >= $2`, [reviewScope(req.profile), since]))
     .map((c) => mail.certificateIssued(c, c)));
   res.json({ issued });
 }));
@@ -481,7 +482,6 @@ const createInstitution = (template, r) => one("select public.create_institution
 app.get("/api/super/institutions", auth, superAdmin, wrap(async (req, res) => {
   res.json(await q(`select c.id, c.name, c.city, c.state, c.pincode, c.active, c.created_at,
       count(p.id) filter (where p.role = 'student')::int students,
-      count(p.id) filter (where p.role = 'student' and p.approval_status = 'pending')::int waiting,
       coalesce(array_agg(p.email order by p.email) filter (where p.role in ('admin', 'super_admin')), '{}') admins
     from public.colleges c left join public.profiles p on p.college_id = c.id group by c.id order by c.name`));
 }));
@@ -589,6 +589,109 @@ app.post("/api/super/payments/review", auth, superAdmin, wrap(async (req, res) =
     join public.profiles s on s.id = p.user_id where p.id = any($1::uuid[])`, [done]))
     .map((r) => approve ? mail.paymentReceipt(r, r) : mail.paymentRejected(r, note)));
   res.json({ done: done.length, failed: ids.filter((id) => !done.includes(id)).map((id) => ({ id, error: "Already reviewed" })) });
+}));
+
+// A student whose institution isn't listed adds it after verifying their email, and carries on straight away. It is kept off
+// the public list until the super admin switches it on, so a typo or a fake never appears on the sign-up page.
+const mainCollege = async () =>
+  (await one("select college_id from public.profiles where role = 'super_admin' and college_id is not null order by created_at limit 1"))?.college_id;
+const collegeNamed = (name) => one("select id from public.colleges where lower(trim(name)) = lower($1)", [name]);
+function cleanWebsite(raw) {
+  const v = String(raw || "").trim();
+  if (!v) return null;
+  try {
+    const u = new URL(/^https?:\/\//i.test(v) ? v : "https://" + v);
+    return u.hostname.includes(".") && v.length <= 200 ? u.href : undefined;
+  } catch { return undefined; }
+}
+app.post("/api/me/institution", auth, wrap(async (req, res) => {
+  if (req.profile.college_id) return res.json({ ok: true });
+  const name = String(req.body.name || "").replace(/\s+/g, " ").trim(), city = String(req.body.city || "").trim(), pincode = String(req.body.pincode || "").trim();
+  const website = cleanWebsite(req.body.website);
+  if (name.length < 3 || name.length > 150) return res.status(400).json({ error: "Enter your institution's name as it appears on its website" });
+  if (!city || city.length > 80) return res.status(400).json({ error: "Enter your institution's city" });
+  if (!/^[1-9][0-9]{5}$/.test(pincode)) return res.status(400).json({ error: "Pincode must be 6 digits" });
+  if (website === undefined) return res.status(400).json({ error: "That website link doesn't look right" });
+  // Someone else may have added it already, under this exact name.
+  let college = await collegeNamed(name);
+  if (!college) {
+    const template = await mainCollege();
+    if (!template) return res.status(503).json({ error: "We can't add institutions right now. Please contact greenxpglobal@gmail.com." });
+    try {
+      college = await createInstitution(template, { name, city, state: "", pincode, fee: 199 });
+      await q("update public.colleges set active = false, website = $2, added_by = $3 where id = $1", [college.id, website, req.user.id]);
+      await audit(req.user.id, "add_institution", "college", college.id, { name });
+    } catch (e) {
+      college = await collegeNamed(name); // two students at the same moment
+      if (!college) return res.status(400).json({ error: userError(e) });
+    }
+  }
+  await q("update public.profiles set college_id = $2 where id = $1", [req.profile.id, college.id]);
+  res.json({ ok: true });
+}));
+
+// Certificate design: the background and the signature are images in S3 (certificates/); the rest is drawn by the page.
+// A college without its own design uses the main one, so the super admin's upload covers everyone.
+async function certificateTemplate(collegeId) {
+  const main = await mainCollege();
+  const rows = await q("select college_id, template_config c from public.certificate_settings where college_id = any($1::uuid[])", [[collegeId, main].filter(Boolean)]);
+  const designed = rows.filter((r) => r.c.background_path || r.c.signature_path);
+  const c = (designed.find((r) => r.college_id === collegeId) || designed[0])?.c || {};
+  const url = (k) => c[k] ? getSignedUrl(s3, new GetObjectCommand({ Bucket: UPLOADS_BUCKET, Key: `certificates/${c[k]}` }), { expiresIn: 3600 }) : null;
+  return { background_url: await url("background_path"), signature_url: await url("signature_path"), signatory_name: c.signatory_name || "", signatory_title: c.signatory_title || "" };
+}
+app.get("/api/admin/certificate-template", auth, admin, wrap(async (req, res) => res.json(await certificateTemplate(req.profile.college_id))));
+app.put("/api/admin/certificate-template", auth, admin, wrap(async (req, res) => {
+  const patch = { signatory_name: String(req.body.signatoryName || "").trim().slice(0, 80), signatory_title: String(req.body.signatoryTitle || "").trim().slice(0, 120) };
+  for (const [from, to] of [["backgroundPath", "background_path"], ["signaturePath", "signature_path"]]) {
+    const path = req.body[from];
+    if (path == null) continue;
+    if (typeof path !== "string" || !path.startsWith(req.profile.id + "/") || path.includes("..")) return res.status(400).json({ error: "Invalid image" });
+    patch[to] = path;
+  }
+  await q(`insert into public.certificate_settings (college_id, template_config) values ($1, $2) on conflict (college_id)
+    do update set template_config = public.certificate_settings.template_config || excluded.template_config`, [req.profile.college_id, patch]);
+  await audit(req.user.id, "edit_certificate_template", "college", req.profile.college_id, { signatory: patch.signatory_name });
+  res.json({ ok: true });
+}));
+
+// Everything printed on one student's certificate. The activities come from their verified record for that year.
+app.get("/api/me/certificates/:id/document", auth, wrap(async (req, res) => {
+  const p = req.profile;
+  const c = await one(`select c.id, c.tier, c.xp_earned, c.certificate_code, c.issued_at, c.academic_year_id, y.label academic_year
+    from public.certificates c join public.academic_years y on y.id = c.academic_year_id
+    where c.id = $1 and c.user_id = $2 and c.status = 'issued'`, [req.params.id, p.id]);
+  if (!c) return res.status(404).json({ error: "Certificate not found" });
+  const [college, activities, template] = await Promise.all([
+    one("select name, city from public.colleges where id = $1", [p.college_id]),
+    q(`select a.name, count(*)::int times, sum(t.amount)::int xp from public.xp_transactions t
+      join public.activity_submissions s on s.id = t.reference_id and s.verification_status = 'verified'
+      join public.activities a on a.id = s.activity_id
+      where t.user_id = $1 and t.academic_year_id = $2 and t.source = 'activity' group by a.name order by xp desc, a.name`, [p.id, c.academic_year_id]),
+    certificateTemplate(p.college_id),
+  ]);
+  res.json({ ...c, student_name: p.full_name, usn: p.usn, registration_id: p.registration_id, institution: college?.name, city: college?.city, activities, template });
+}));
+
+// Enquiries go to the team's inbox, and a reply goes straight back to the person who asked. Anyone can use this, so it is
+// limited per visitor and per day: otherwise a bot could use up the whole daily email allowance.
+const enquiryLog = { day: "", total: 0, byVisitor: new Map() };
+app.post("/api/public/enquiry", wrap(async (req, res) => {
+  const fallback = "Please email greenxpglobal@gmail.com directly.";
+  if (req.body.company) return res.json({ ok: true }); // a field people can't see: only bots fill it in
+  const name = String(req.body.name || "").trim(), email = String(req.body.email || "").trim(), message = String(req.body.message || "").trim();
+  if (!name || name.length > 100) return res.status(400).json({ error: "Enter your name" });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 200) return res.status(400).json({ error: "Enter a valid email address, so we can reply" });
+  if (message.length < 5 || message.length > 3000) return res.status(400).json({ error: "Write your question (up to 3000 characters)" });
+  if (!env.RESEND_API_KEY) return res.status(503).json({ error: `We can't send this right now. ${fallback}` });
+  const today = new Date().toISOString().slice(0, 10);
+  if (enquiryLog.day !== today) Object.assign(enquiryLog, { day: today, total: 0, byVisitor: new Map() });
+  const mine = enquiryLog.byVisitor.get(req.ip) || 0;
+  if (mine >= 5 || enquiryLog.total >= 30) return res.status(429).json({ error: `Too many messages today. ${fallback}` });
+  enquiryLog.byVisitor.set(req.ip, mine + 1); enquiryLog.total++;
+  try { await mailer.send([mail.enquiry({ name, email, message })]); }
+  catch (e) { console.error("enquiry not sent:", e.message); return res.status(502).json({ error: `We couldn't send that. ${fallback}` }); }
+  res.json({ ok: true });
 }));
 
 // 6. Utility bills: read units and the billing period from an uploaded bill; the student checks and corrects them before saving.

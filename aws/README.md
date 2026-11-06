@@ -54,9 +54,24 @@ Students pay the fee by UPI to the ID and QR code on the pay screen (`UPI_ID` an
 the transaction ID or a screenshot (S3 `payments/`). Their membership starts when the super admin confirms it in
 Admin portal > Payments. Check each one against the bank account: the details a student sends prove nothing on their own.
 
+## Students and institutions
+
+Verifying their email is all a student needs; admins can block an account under Admin portal > Students. A student whose
+institution isn't listed adds it after their first sign-in. It gets a copy of the main college's year, activities and rules at
+₹199, stays off the public sign-up list, and shows "added by a student" under Institutions until the super admin switches it on.
+The super admin reviews activities and issues certificates for every institution, since these may have no admin of their own.
+
+## Certificates
+
+Students need at least 200 XP for the year. Admin portal has a Certificate template card for a background image and signature
+(S3 `certificates/`) and the signatory's name and title. A college without its own uses the super admin's. The site draws each
+certificate from the student's record and prints it to PDF from the browser; the signature is an image, not a cryptographic one.
+
 ## Email
 
-[api/email.js](../api/email.js) sends these through Resend from `greenxp.in`: account approved or rejected, payment confirmed
+Enquiries from the Help form go to `greenxpglobal@gmail.com`, limited to 5 per visitor and 30 in all each day.
+
+[api/email.js](../api/email.js) sends these through Resend from `greenxp.in`: account blocked or fee waived, payment confirmed
 or rejected, activities rejected (one email per student per review) and certificate issued. Emails go out after the change is saved, and
 a failed send only logs `email not sent:` in the API's log. Resend's free plan allows 100 emails a day and 3,000 a month, so
 issuing certificates to a large college at once needs a paid plan.
