@@ -75,8 +75,9 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 .app h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;margin-top:1.2rem}
 .card{box-shadow:0 1px 0 var(--line);transition:box-shadow .2s,transform .2s}
 .dash{display:grid;grid-template-columns:1fr;gap:.7rem;margin-bottom:.7rem}.dash>.card,.dash>p{margin:0}
-.lb .card{display:flex;align-items:center}.lb .medal{font-size:1.5rem;width:2.2rem;text-align:center}
-.lb .card.top{border-color:var(--xp);background:color-mix(in srgb,var(--xp) 12%,var(--card))}
+.board .card{display:flex;align-items:center}.board .medal{font-size:1.5rem;width:2.2rem;text-align:center}
+.goal{display:grid;grid-template-columns:1fr;gap:.8rem}.goal div{border-left:3px solid #e9a23b;padding:.1rem 0 .1rem .7rem}.goal b{display:block;font-family:"Bricolage Grotesque",system-ui,sans-serif}
+.board .card.top{border-color:var(--xp);background:color-mix(in srgb,var(--xp) 12%,var(--card))}
 @media(max-width:899px){
   .app{padding:.8rem .9rem 6rem}
   .tabs{justify-content:flex-start;scrollbar-width:none;box-shadow:0 -6px 20px #0000000f}.tabs::-webkit-scrollbar{display:none}
@@ -98,7 +99,7 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
   .card:hover{box-shadow:0 10px 30px #0634271a}
   .actgrid{grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1rem}
   .form{max-width:760px}
-  .lb{max-width:860px}
+  .goal{grid-template-columns:repeat(3,1fr)}.board .card{padding:.8rem 1.3rem;margin-bottom:.6rem}
 }
 /* ---------- Navigation bar: forest green, matches the landing page ---------- */
 .tabs{background:linear-gradient(180deg,#0f3a31,#0a2722)!important;border-color:#ffffff14!important;gap:.2rem}
@@ -1018,7 +1019,12 @@ async function deleteLog(id) {
 
 async function ranks() {
   const data = await api("/api/leaderboard", null, "GET").catch(() => []);
-  $("app").innerHTML = `<h2>Leaderboard</h2><p class="slogan">Your rank says what you did for the planet.</p>` + `<div class="lb">` + ((data||[]).map(r => `<div class="card row${r.rank <= 3 ? " top" : ""}"><span class="medal">${["🥇", "🥈", "🥉"][r.rank - 1] || `<b>${r.rank}</b>`}</span><span style="flex:1;margin-left:.6rem">${esc(r.display_name)}<br><span class="mute">${esc(r.department)}</span></span><b>${r.xp} XP</b></div>`).join("") || `<p class="mute">No XP earned yet. Be the first.</p>`) + `</div>`;
+  $("app").innerHTML = `<h2>Leaderboard</h2><p class="slogan">Your rank says what you did for the planet.</p>
+  <div class="card board-goal"><h3 style="margin-top:0">How the leaderboard works</h3><div class="goal">
+    <div><b>Your campus league</b><span class="mute">You are ranked against students of your own institution.</span></div>
+    <div><b>Verified XP only</b><span class="mute">Your rank is the total XP you have earned from approved green activities. Spending XP on rewards never lowers it.</span></div>
+    <div><b>Climb the ranks</b><span class="mute">The top 50 are shown here. Complete more activities to move up and earn your certificate.</span></div>
+  </div><p style="margin:.9rem 0 0"><button class="s" onclick="show(&#39;earn&#39;)">Earn XP now</button></p></div>` + `<div class="board">` + ((data||[]).map(r => `<div class="card row${r.rank <= 3 ? " top" : ""}"><span class="medal">${["🥇", "🥈", "🥉"][r.rank - 1] || `<b>${r.rank}</b>`}</span><span style="flex:1;margin-left:.6rem">${esc(r.display_name)}<br><span class="mute">${esc(r.department)}</span></span><b>${r.xp} XP</b></div>`).join("") || `<p class="mute">No XP earned yet. Be the first.</p>`) + `</div>`;
 }
 async function cert() {
   const data = await api("/api/me/certificates", null, "GET").catch(() => []);
