@@ -151,6 +151,15 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 .paycta{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;border-color:color-mix(in srgb,#e9a23b 60%,var(--line));background:linear-gradient(150deg,color-mix(in srgb,#e9a23b 14%,var(--card)),var(--card) 70%)}
 .paycta p{margin:.2rem 0 0}.paycta button,.locked button{background:#e9a23b;color:#071d18;border-bottom-color:#b97a1f}
 .locked{text-align:center}.locked .lk{font-size:2.4rem}
+/* ---------- Leaderboards ---------- */
+.lbtabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem;margin:.2rem 0 .8rem}
+.lbtabs button{display:flex;flex-direction:column;align-items:flex-start;gap:.15rem;text-align:left;background:var(--card);color:var(--ink);border:2px solid var(--line);border-radius:14px;padding:.7rem .9rem;min-width:0}
+.lbtabs button span{font:600 .78rem system-ui;color:var(--mute);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lbtabs button b{font:800 1.05rem "Bricolage Grotesque",system-ui,sans-serif}
+.lbtabs button.on{border-color:#e9a23b;background:linear-gradient(150deg,color-mix(in srgb,#e9a23b 18%,var(--card)),var(--card) 70%);box-shadow:0 6px 18px #e9a23b33}
+.lbme{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap}
+.lbme-rank{text-align:right;margin-left:auto}.lbme-rank b{display:block;font:800 2rem/1 "Bricolage Grotesque",system-ui,sans-serif;color:#e9a23b}
+.board .card.me{outline:2px solid #e9a23b;outline-offset:-2px}
 /* ---------- FAQ ---------- */
 .faqtopics{display:flex;flex-wrap:wrap;gap:.4rem;margin:.2rem 0 .6rem}
 .faq{padding:0;margin-bottom:.5rem}.faq summary{cursor:pointer;list-style:none;padding:.85rem 2.6rem .85rem 1rem;font-weight:700;position:relative}
@@ -813,7 +822,7 @@ function show(t) {
     : [["home","Home"],["earn","Earn XP"],["fp","Footprint"],["ranks","Leaderboard"],["cert","Certificate"],["faq","FAQ"],["help","Contact"]];
   $("tabs").innerHTML = `<span class="brand" onclick="show('${T[0][0]}')"><img src="logo-full.png" alt="GreenXP"></span>` + T.map(x => `<button class="${x[0]==t?"on":""}" onclick="show('${x[0]}')">${x[1]}</button>`).join("") + `<button class="out" onclick="logout()">Log out</button>`;
   $("app").classList.toggle("wide", ["admin", "earn"].includes(t));
-  ({ home, earn, fp, ranks, cert, admin, faq: () => faq(), help: () => help(), pay: () => payScreen(payYear) })[t]();
+  ({ home, earn, fp, ranks: () => ranks(), cert, admin, faq: () => faq(), help: () => help(), pay: () => payScreen(payYear) })[t]();
 }
 const SLOGANS = ["Save the planet, one XP at a time.", "Small habits. Big planet.", "Every green action counts. Now it scores too.", "Little green steps add up to a big green change.", "Go green. Level up."];
 // Home's streak card: the current run of green days, the last 7 days, and what to do next.
@@ -1147,15 +1156,32 @@ async function deleteLog(id) {
   try { await api(`/api/footprint-logs/${id}`, null, "DELETE"); fp(); } catch (e) { alert(e.message); }
 }
 
-async function ranks() {
-  if (!member && me.role === "student") return locked("Leaderboard", "Your rank says what you did for the planet.", "See where you stand among students of your institution, and climb the ranks with every verified activity.");
-  const data = await api("/api/leaderboard", null, "GET").catch(() => []);
+// Three leaderboards: the student's campus, their city and their state. The chosen one is remembered while the page is open.
+let lbScope = "campus", lbLabels = {};
+const LB = { campus: ["Campus", "Your campus"], city: ["City", "Your city"], state: ["State", "Your state"] };
+async function ranks(scope = lbScope) {
+  if (!member && me.role === "student") return locked("Leaderboard", "Your rank says what you did for the planet.", "See where you stand on your campus, in your city and across your state, and climb the ranks with every verified activity.");
+  lbScope = scope;
   $("app").innerHTML = `<h2>Leaderboard</h2><p class="slogan">Your rank says what you did for the planet.</p>
-  <div class="card board-goal"><h3 style="margin-top:0">How the leaderboard works</h3><div class="goal">
-    <div><b>Your campus league</b><span class="mute">You are ranked against students of your own institution.</span></div>
+  <div class="lbtabs" role="tablist">${Object.entries(LB).map(([k, [t, sub]]) => `<button role="tab" aria-selected="${k === scope}" class="${k === scope ? "on" : ""}" onclick="ranks('${k}')"><b>${t}</b><span id="lbl_${k}">${esc(lbLabels[k] || sub)}</span></button>`).join("")}</div>
+  <div id="lbbody"><p class="mute">Loading…</p></div>
+  <div class="card board-goal"><h3 style="margin-top:0">How the leaderboards work</h3><div class="goal">
+    <div><b>Three leagues</b><span class="mute">Compare yourself with students of your own campus, of every institution in your city, and across your state.</span></div>
     <div><b>Verified XP only</b><span class="mute">Your rank is the total XP you have earned from approved green activities. Spending XP on rewards never lowers it.</span></div>
-    <div><b>Climb the ranks</b><span class="mute">The top 50 are shown here. Complete more activities to move up and earn your certificate.</span></div>
-  </div><p style="margin:.9rem 0 0"><button class="s" onclick="show(&#39;earn&#39;)">Earn XP now</button></p></div>` + `<div class="board">` + ((data||[]).map(r => `<div class="card row${r.rank <= 3 ? " top" : ""}"><span class="medal">${["🥇", "🥈", "🥉"][r.rank - 1] || `<b>${r.rank}</b>`}</span><span style="flex:1;margin-left:.6rem">${esc(r.display_name)}<br><span class="mute">${esc(r.department)}</span></span><b>${r.xp} XP</b></div>`).join("") || `<p class="mute">No XP earned yet. Be the first.</p>`) + `</div>`;
+    <div><b>Climb the ranks</b><span class="mute">The top 50 of each league are shown, and you always see your own rank. Complete more activities to move up.</span></div>
+  </div><p style="margin:.9rem 0 0"><button class="s" onclick="show(&#39;earn&#39;)">Earn XP now</button></p></div>`;
+  const d = await api(`/api/leaderboard?scope=${scope}`, null, "GET").catch(e => ({ error: e.message }));
+  if (tab !== "ranks" || lbScope !== scope) return; // moved on while this loaded
+  const body = $("lbbody");
+  if (d.error) { body.innerHTML = `<p class="err">${esc(d.error)}</p>`; return; }
+  if (!d.label) { body.innerHTML = `<div class="card"><p class="mute" style="margin:0">Your institution's ${scope} isn't recorded yet, so this leaderboard isn't available. Please contact us to add it.</p></div>`; return; }
+  $("lbl_" + scope).textContent = lbLabels[scope] = d.label;
+  const wide = scope !== "campus";
+  const row = r => `<div class="card row${r.rank <= 3 ? " top" : ""}${r.is_me ? " me" : ""}"><span class="medal">${["🥇", "🥈", "🥉"][r.rank - 1] || `<b>${r.rank}</b>`}</span>
+    <span style="flex:1;margin-left:.6rem;min-width:0">${esc(r.display_name)}${r.is_me ? ` <span class="pill">You</span>` : ""}<br><span class="mute">${esc([r.department, wide ? r.college : ""].filter(Boolean).join(" · "))}</span></span><b>${r.xp} XP</b></div>`;
+  body.innerHTML = `<div class="card lbme"><div><span class="mute">${LB[scope][1]}</span><h3 style="margin:.1rem 0 0">${esc(d.label)}</h3></div>
+      <div class="lbme-rank">${d.me ? `<b>#${d.me.rank}</b><span class="mute">of ${d.total} · ${d.me.xp} XP</span>` : `<span class="mute">Earn your first verified XP to get a rank here.</span>`}</div></div>
+    <div class="board">${d.rows.map(row).join("") || `<p class="mute">No XP earned yet. Be the first.</p>`}</div>`;
 }
 // Frequently asked questions: a menu tab for signed-in users, and a link on the log-in page for everyone else.
 const FAQ = [
@@ -1194,8 +1220,8 @@ const FAQ = [
     ["Can I delete a wrong entry?", "Yes. In <b>Footprint</b>, under Your entries, click ✕ next to the entry."],
   ]],
   ["Leaderboard", [
-    ["How does the leaderboard work?", "You are ranked against students of your own institution by the total XP you've earned from approved activities. The top 50 are shown."],
-    ["What do others see about me?", "Your name, department and XP on the leaderboard. Your mobile number is never shown publicly."],
+    ["How do the leaderboards work?", "There are three: your campus, your city (every institution in your city) and your state. You are ranked by the total XP you've earned from approved activities. The top 50 of each are shown, and you always see your own rank."],
+    ["What do others see about me?", "Your name, department, institution and XP on the leaderboards. Your mobile number is never shown publicly."],
   ]],
   ["Certificates", [
     ["Who gets a certificate?", "Students with <b>400 or more verified XP</b> in an academic year. Certificates are issued once a year, at the end of the academic year."],

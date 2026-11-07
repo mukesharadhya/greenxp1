@@ -236,8 +236,27 @@ app.get("/api/fee", auth, wrap(async (req, res) => {
     [req.profile.college_id, y.id]) : null);
 }));
 
+// Leaderboards by total XP earned (spending XP never lowers it): ?scope=campus (the student's institution), city or
+// state (institutions in the same city or state). Top 50, plus the student's own rank wherever it is.
 app.get("/api/leaderboard", auth, paid, wrap(async (req, res) => {
-  res.json(await asUser(req.profile.id, (sql) => sql("select * from public.get_leaderboard('all', 50)")));
+  const scope = ["campus", "city", "state"].includes(req.query.scope) ? req.query.scope : "campus";
+  const c = await one("select name, city, state from public.colleges where id = $1", [req.profile.college_id]);
+  const label = c && { campus: c.name, city: c.city, state: c.state }[scope];
+  if (!label) return res.json({ scope, label: null, rows: [], me: null });
+  const rows = await q(`with x as (select user_id, coalesce(sum(amount) filter (where source <> 'redemption'), 0)::int xp
+        from public.xp_transactions group by user_id),
+      ranked as (select rank() over (order by x.xp desc)::int rank, p.id, coalesce(p.username, p.full_name) display_name,
+          p.department, c.name college, x.xp, count(*) over ()::int total
+        from x join public.profiles p on p.id = x.user_id join public.colleges c on c.id = p.college_id
+        where p.role = 'student' and p.leaderboard_visibility and p.account_status <> 'suspended' and p.approval_status <> 'rejected'
+          and x.xp > 0 and case $2 when 'campus' then p.college_id = $3
+            when 'city' then lower(trim(c.city)) = lower(trim($4)) and lower(trim(c.state)) = lower(trim(coalesce($5, c.state)))
+            else lower(trim(c.state)) = lower(trim($5)) end)
+    select rank, display_name, department, college, xp, total, id = $1 as is_me from ranked
+    where rank <= 50 or id = $1 order by rank, display_name limit 51`, [req.profile.id, scope, req.profile.college_id, c.city, c.state]);
+  const me = rows.find((r) => r.is_me) || null;
+  res.json({ scope, label, total: rows[0]?.total || 0, me: me && { rank: me.rank, xp: me.xp },
+    rows: rows.filter((r) => r.rank <= 50).map(({ total, ...r }) => r) });
 }));
 
 // Footprint logs: the last year of entries; students add and delete their own.
