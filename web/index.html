@@ -184,6 +184,9 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 .ab-cta h3{font:800 clamp(1.3rem,3vw,1.9rem)/1.2 "Bricolage Grotesque",system-ui,sans-serif;margin:0 0 .4rem}.ab-cta p{color:#a7cfc3;margin:0 0 1rem}
 .ab-cta button{background:#e9a23b;color:#071d18;border-bottom-color:#b97a1f;padding:.8rem 1.4rem}
 @media(max-width:600px){.ab-sec{grid-template-columns:1fr;padding:1.1rem}.ab-n{font-size:1.9rem}}
+.gpsnote{border-color:color-mix(in srgb,#3b82d6 55%,var(--line));background:linear-gradient(150deg,color-mix(in srgb,#3b82d6 12%,var(--card)),var(--card) 70%)}
+.gpsnote p{margin:.3rem 0 0}.gpsnote a{color:var(--prid);font-weight:700}
+.gpstip{font-size:.88rem;border-left:3px solid #3b82d6;padding:.2rem 0 .2rem .6rem;color:var(--mute)}
 /* ---------- FAQ ---------- */
 .faqtopics{display:flex;flex-wrap:wrap;gap:.4rem;margin:.2rem 0 .6rem}
 .faq{padding:0;margin-bottom:.5rem}.faq summary{cursor:pointer;list-style:none;padding:.85rem 2.6rem .85rem 1rem;font-weight:700;position:relative}
@@ -251,7 +254,7 @@ body{overflow-x:clip}
 <body><div class="app" id="app">Loading…</div><nav class="tabs" id="tabs" hidden></nav>
 <div class="lb" id="lb" hidden onclick="this.hidden=true"><img alt="Proof photo, full size"></div>
 <dialog id="rj"><form method="dialog"><h3>Reason for rejection</h3><p class="mute">The student sees this reason.</p>
-  <label for="rjs">Common reasons</label><select id="rjs"><option value="">Choose a reason…</option><option>Photo doesn't show the activity</option><option>Photo is unclear or too dark</option><option>Same photo was used before</option><option>Doesn't meet the activity rules</option></select>
+  <label for="rjs">Common reasons</label><select id="rjs"><option value="">Choose a reason…</option><option>Photo doesn't show the activity</option><option>Photo is unclear or too dark</option><option>No GPS coordinates on the photo</option><option>Same photo was used before</option><option>Doesn't meet the activity rules</option></select>
   <label for="rjt">Or write your own</label><textarea id="rjt" rows="3" maxlength="500"></textarea>
   <div class="row"><button value="cancel" class="o">Cancel</button><button value="ok">Reject</button></div></form></dialog>
 <dialog id="lo" aria-labelledby="lo_t"><form method="dialog"><h3 id="lo_t">Log out?</h3><p class="mute">Are you sure you want to log out of GreenXP?</p>
@@ -893,12 +896,14 @@ async function earn() {
   // Tapping an activity opens its one-line instruction and the right button for how it's checked.
   const ACTION = { photo: "📷 Upload photo", photo_admin: "📷 Upload photo", self: "✅ Mark as done", qr_event: "🔑 Enter event code" };
   const HOW = { self: "instant XP", photo: "photo · approved by admin", photo_admin: "photo · approved by admin", qr_event: "event code", automatic: "automatic" };
-  $("app").innerHTML = `<h2>Earn XP</h2><p class="slogan">Talk is cheap. Proof earns XP.</p>${payCta("Browse the activities now. Pay to start submitting them and earning XP.")}<p class="mute">Tap an activity to see what to do.</p><p id="msg" class="mute"></p><div class="actgrid">` + data.map(a => `<div class="card act" id="ac_${esc(a.id)}">
+  $("app").innerHTML = `<h2>Earn XP</h2><p class="slogan">Talk is cheap. Proof earns XP.</p>${payCta("Browse the activities now. Pay to start submitting them and earning XP.")}<div class="card gpsnote"><b>📍 Photo proofs need GPS coordinates on the photo</b><p class="mute">Take your activity photo with a GPS camera app, so the photo shows the location (latitude and longitude), the date and the time. Photos without them may be rejected. <a href="#" onclick="show('faq');$('fq').value='GPS';faqFilter();return false">How do I add them?</a></p></div>
+  <p class="mute">Tap an activity to see what to do.</p><p id="msg" class="mute"></p><div class="actgrid">` + data.map(a => `<div class="card act" id="ac_${esc(a.id)}">
     <div class="row" role="button" tabindex="0" aria-expanded="false" onclick="openAct('${esc(a.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAct('${esc(a.id)}')}" style="cursor:pointer">
       <span class="acticon" aria-hidden="true">${actIcon(a)}</span>
       <div style="flex:1;min-width:0"><b>${esc(a.name)}</b><br><span class="mute">${esc(a.category)} · ${a.frequency_limit} per ${a.frequency_period} · ${HOW[a.verification_type] || ""}</span></div>
       <span style="white-space:nowrap"><span class="pill">+${a.xp_value}</span> <span class="mute chev">›</span></span></div>
     <div class="actdet" hidden><p>📝 ${esc(a.description || "Complete this activity to earn XP.")}</p>${actQuestions(a)}
+      ${["photo", "photo_admin"].includes(a.verification_type) ? `<p class="gpstip">📍 Upload a photo of you doing this activity, taken with a GPS camera app so it shows the location coordinates, date and time.</p>` : ""}
       ${a.verification_type === "automatic" ? `<p class="mute">Nothing to submit – XP is added automatically.</p>`
         : member ? `<button class="s" onclick="doAct('${esc(a.id)}')">${ACTION[a.verification_type] || "Go"}</button><p class="actmsg mute"></p>` : payBtn()}</div></div>`).join("") + `</div>`;
 }
@@ -1234,7 +1239,7 @@ function about() {
   ${sec("02", "Introduction", "Meet GreenXP", `
     <p>GreenXP is a sustainability platform built for students and campuses. It works like a game you already know how to play: do something good, earn points, level up.</p>
     ${pts([["Act green", "Choose from real activities set by your institution: travel, energy, water, waste, food and community."],
-           ["Upload proof", "Share a photo or an event code. Admins verify it, so every point is earned honestly."],
+           ["Upload proof", "Share a GPS-stamped photo or an event code. Admins verify it, so every point is earned honestly."],
            ["Earn XP and level up", "Grow from Eco Starter to Eco Legend, keep your green streak alive and climb your campus, city and state leaderboards."],
            ["Get certified", "Reach 200 verified XP in a year to earn a star-rated certificate anyone can verify, ready for LinkedIn. Cross 1000 XP to earn it With Distinction."]])}
     <p>Along the way, your personal carbon footprint dashboard shows where your biggest impact is, so every step is a smart one.</p>`)}
@@ -1282,8 +1287,9 @@ const FAQ = [
     ["How do I earn XP?", "Open <b>Earn XP</b> and tap an activity to see what to do. Depending on the activity you upload a photo as proof, mark it as done, enter an event code, or get XP automatically."],
     ["Why can't I submit an activity again?", "Each activity counts only a set number of times per day, week or month. The limit is shown under the activity's name."],
     ["When do I get XP for a photo?", "Photo proofs are checked by an admin. Your XP is added as soon as the proof is approved."],
-    ["My proof was rejected. Why?", "We email you the reason. Usually the photo didn't clearly show the activity. You can try again with a clear, original photo of you doing the activity."],
-    ["What makes a good proof photo?", "A clear, original photo taken by you that shows the activity actually happening. Photos copied from the internet or reused from earlier submissions are rejected."],
+    ["My proof was rejected. Why?", "We email you the reason. Usually the photo didn't clearly show the activity, or it had no GPS coordinates on it. You can try again with a clear, original photo of you doing the activity, taken with a GPS camera app."],
+    ["What makes a good proof photo?", "A clear, original photo taken by you that shows the activity actually happening, with GPS coordinates (latitude and longitude), the date and the time stamped on the photo. Photos without GPS coordinates, copied from the internet or reused from earlier submissions are rejected."],
+    ["How do I add GPS coordinates to my photo?", "Install a free GPS camera app from the Play Store or App Store (search for \"GPS Map Camera\"), allow it to use your location, and take your activity photo with it. The app prints the location coordinates, address, date and time on the photo. Then upload that photo from your gallery on the activity in <b>Earn XP</b>."],
     ["What is an event code?", "At campus events and drives, the organisers share a code. Enter it on the event's activity to collect your XP."],
     ["What is a green streak?", "The number of days in a row on which you did at least one green activity (activities that are rejected don't count). It shows on your Home page with your last 7 days. Do one activity every day to keep it going: missing a whole day starts it again from zero."],
     ["What are levels?", "Your total XP decides your level: Eco Starter (0), Green Rookie (100), Green Warrior (300), Eco Champion (600), Planet Hero (1000) and Eco Legend (2000+)."],
@@ -1439,7 +1445,7 @@ const SECTIONS = {
     list: v => `/api/admin/submissions?status=${v}`, review: "/api/admin/submissions/review",
     filter: ["Activity", s => s.activities.name],
     empty: { pending: "No activities waiting. 🎉", verified: "No approved submissions yet.", rejected: "No rejected submissions." },
-    reasons: ["Photo doesn't show the activity", "Photo is unclear or too dark", "Same photo was used before", "Doesn't meet the activity rules"],
+    reasons: ["Photo doesn't show the activity", "Photo is unclear or too dark", "No GPS coordinates on the photo", "Same photo was used before", "Doesn't meet the activity rules"],
     approveMsg: n => `Approve ${n} submissions and award their XP?`, doneMsg: (n, ok) => `${n} submission${n > 1 ? "s" : ""} ${ok ? "approved, XP awarded" : "rejected"}.`,
     search: s => [s.student.full_name, s.student.usn, s.activities.name].join(" "), placeholder: "Search student, USN or activity",
     card: subCard
@@ -1475,7 +1481,7 @@ async function admin() {
   const S = SECTIONS[adminSection];
   adminSel = new Set();
   $("app").innerHTML = adminHeader() + `
-  <div class="card" id="sec_main"><h3>${S.title}</h3>
+  <div class="card" id="sec_main"><h3>${S.title}</h3>${adminSection === "activities" ? `<p class="mute" style="margin-top:0">📍 Check that each photo shows GPS coordinates (latitude and longitude), a date and a time. Reject photos without them using "No GPS coordinates on the photo".</p>` : ""}
     <div class="row" style="justify-content:flex-start;flex-wrap:wrap">${S.views.map(([k, t]) => `<button class="s${k === adminView ? "" : " o"}" onclick="adminView='${k}';admin();adminScroll()">${t}</button>`).join("")}</div>
     <div class="row" style="flex-wrap:wrap;align-items:flex-end;margin-top:.6rem">
       <span style="flex:2;min-width:200px"><label for="as">Search</label><input id="as" type="search" placeholder="${S.placeholder}" oninput="renderQueue()"></span>
