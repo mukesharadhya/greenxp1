@@ -960,7 +960,7 @@ async function doAct(id) {
       if (body.eventCode == null) return;
     }
     if (["photo", "photo_admin"].includes(a.verification_type)) {
-      const f = await new Promise(r => { const i = document.createElement("input"); i.type = "file"; i.accept = "image/*"; i.capture = "environment"; i.onchange = () => r(i.files[0]); i.oncancel = () => r(null); i.click(); });
+      const f = await new Promise(r => { const i = document.createElement("input"); i.type = "file"; i.accept = "image/*"; i.onchange = () => r(i.files[0]); i.oncancel = () => r(null); i.click(); });
       if (!f) return;
       if (f.size > 10 * 1024 * 1024) return actSay(id, "That photo is over 10 MB. Please pick a smaller one.", 1);
       actSay(id, "Uploading your photo…");
