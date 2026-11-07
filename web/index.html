@@ -147,6 +147,10 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 .sk-week i{display:block;height:10px;border-radius:99px;background:var(--line);margin-bottom:.25rem}
 .sk-week .done i{background:linear-gradient(90deg,#e9a23b,#f2b457);box-shadow:0 0 10px #e9a23b66}
 .sk-week span{font-size:.7rem;color:var(--mute);font-weight:700}.sk-week .today span{color:var(--ink)}
+/* ---------- Pay to continue ---------- */
+.paycta{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;border-color:color-mix(in srgb,#e9a23b 60%,var(--line));background:linear-gradient(150deg,color-mix(in srgb,#e9a23b 14%,var(--card)),var(--card) 70%)}
+.paycta p{margin:.2rem 0 0}.paycta button,.locked button{background:#e9a23b;color:#071d18;border-bottom-color:#b97a1f}
+.locked{text-align:center}.locked .lk{font-size:2.4rem}
 /* ---------- FAQ ---------- */
 .faqtopics{display:flex;flex-wrap:wrap;gap:.4rem;margin:.2rem 0 .6rem}
 .faq{padding:0;margin-bottom:.5rem}.faq summary{cursor:pointer;list-style:none;padding:.85rem 2.6rem .85rem 1rem;font-weight:700;position:relative}
@@ -225,6 +229,9 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
 const LV = [[0,"Eco Starter","🌱"],[100,"Green Rookie","🍃"],[300,"Green Warrior","🌿"],[600,"Eco Champion","🌳"],[1000,"Planet Hero","🌎"],[2000,"Eco Legend","🏆"]];
 let me = null, tab = "home", acts = {};
+// member: this year's membership is paid or waived. Without it, Home, Earn XP (browsing), Footprint, FAQ and Contact
+// stay open with a "Pay to continue" button; activities, footprint entries, the leaderboard and certificates need it.
+let member = true, payYear = null;
 // ---- Sign-in with Amazon Cognito: a direct call to its public API, no SDK needed ----
 async function idp(action, body) {
   const r = await fetch(`https://cognito-idp.${GXP.COGNITO_REGION}.amazonaws.com/`, { method: "POST",
@@ -300,8 +307,7 @@ async function init() {
   if (me.approval_status === "rejected") return approvalScreen();
   me.survey = r.survey;
   if (!me.survey) return surveyScreen();
-  // Only a membership for the current academic year unlocks the app.
-  if (!r.member) return payScreen(r.year);
+  member = !!r.member; payYear = r.year;
   $("tabs").hidden = false; show("home");
 }
 async function authScreen() {
@@ -763,9 +769,8 @@ async function analysisScreen() {
 const activitiesIn = cats => api(`/api/activities?categories=${encodeURIComponent(cats.join(","))}`, null, "GET").catch(() => []);
 const UPI_ID = "mukhesharadhya@oksbi";
 async function payScreen(y) {
-  $("tabs").hidden = true;
   const [f, last] = await Promise.all([y ? api("/api/fee", null, "GET").catch(() => null) : null, api("/api/payments/upi", null, "GET").catch(() => null)]);
-  const logout = `<p><button class="o s" onclick="logout()">Log out</button></p>`;
+  const logout = "";
   if (last?.status === "submitted") {
     $("app").innerHTML = `<h2>⏳ Checking your payment</h2><div class="card"><p>Thanks! We've got your payment details and will confirm them against our account. We'll email you when your membership is active.</p>
       ${last.upi_ref ? `<div class="row mute"><span>Transaction ID</span><b>${esc(last.upi_ref)}</b></div>` : ""}
@@ -804,11 +809,11 @@ async function sendPayment() {
 }
 function show(t) {
   tab = t;
-  const T = ["admin","super_admin"].includes(me.role) ? [["admin","Admin"],["ranks","Leaderboard"],["faq","FAQ"],["help","Help"]]
-    : [["home","Home"],["earn","Earn XP"],["fp","Footprint"],["ranks","Leaderboard"],["cert","Certificate"],["faq","FAQ"],["help","Help"]];
+  const T = ["admin","super_admin"].includes(me.role) ? [["admin","Admin"],["ranks","Leaderboard"],["faq","FAQ"],["help","Contact"]]
+    : [["home","Home"],["earn","Earn XP"],["fp","Footprint"],["ranks","Leaderboard"],["cert","Certificate"],["faq","FAQ"],["help","Contact"]];
   $("tabs").innerHTML = `<span class="brand" onclick="show('${T[0][0]}')"><img src="logo-full.png" alt="GreenXP"></span>` + T.map(x => `<button class="${x[0]==t?"on":""}" onclick="show('${x[0]}')">${x[1]}</button>`).join("") + `<button class="out" onclick="logout()">Log out</button>`;
   $("app").classList.toggle("wide", ["admin", "earn"].includes(t));
-  ({ home, earn, fp, ranks, cert, admin, faq: () => faq(), help: () => help() })[t]();
+  ({ home, earn, fp, ranks, cert, admin, faq: () => faq(), help: () => help(), pay: () => payScreen(payYear) })[t]();
 }
 const SLOGANS = ["Save the planet, one XP at a time.", "Small habits. Big planet.", "Every green action counts. Now it scores too.", "Little green steps add up to a big green change.", "Go green. Level up."];
 // Home's streak card: the current run of green days, the last 7 days, and what to do next.
@@ -825,10 +830,16 @@ function streakCard(k, span) {
     <p class="mute" style="margin:.6rem 0 ${k.today ? 0 : ".6rem"}">${msg}</p>
     ${k.today ? "" : `<button class="s" onclick="show('earn')">Earn XP now</button>`}</div>`;
 }
+const payCta = msg => member ? "" : `<div class="card paycta"><div><b>Activate your year to unlock GreenXP</b><p class="mute">${msg}</p></div><button onclick="show('pay')">Pay to continue</button></div>`;
+const payBtn = (cls = "s") => `<button class="${cls}" onclick="show('pay')">Pay to continue</button>`;
+function locked(title, slogan, what) {
+  $("app").innerHTML = `<h2>${title}</h2><p class="slogan">${slogan}</p><div class="card form locked"><div class="lk" aria-hidden="true">🔒</div>
+    <h3 style="margin-top:.2rem">Unlocks after payment</h3><p class="mute">${what}</p>${payBtn("")}</div>`;
+}
 async function home() {
   const s = await api("/api/me/xp", null, "GET").catch(() => ({ earned: 0, spendable: 0, year_earned: 0 }));
   const e = +s.earned, l = [...LV].reverse().find(x => e >= x[0]), n = LV.find(x => x[0] > e), p = n ? Math.round((e - l[0]) / (n[0] - l[0]) * 100) : 100;
-  $("app").innerHTML = `<h2>Hi ${esc((me.full_name||"").split(" ")[0])} ${l[2]}</h2><p class="slogan">${SLOGANS[Math.floor(Date.now() / 864e5) % SLOGANS.length]}</p>
+  $("app").innerHTML = `<h2>Hi ${esc((me.full_name||"").split(" ")[0])} ${l[2]}</h2><p class="slogan">${SLOGANS[Math.floor(Date.now() / 864e5) % SLOGANS.length]}</p>${payCta("Pay the yearly membership to submit activities, earn XP, log your footprint, join the leaderboard and earn your certificate.")}
   <div class="dash"><div class="card"><div class="row" style="justify-content:flex-start;gap:.9rem;align-items:flex-start">${passport(me.photo_url)}
     <div style="min-width:0"><b>${esc(me.full_name)}</b><br><span class="mute">USN: ${esc(me.usn)}<br>Registration ID: <b>${esc(me.registration_id)}</b>${me.linkedin_url ? `<br><a href="${esc(me.linkedin_url)}" target="_blank" rel="noopener" style="color:var(--prid);font-weight:700">LinkedIn profile</a>` : ""}</span>
       <br><button class="s o" style="margin-top:.4rem" onclick="editProfile()">Edit profile</button></div></div></div>
@@ -849,14 +860,14 @@ async function earn() {
   // Tapping an activity opens its one-line instruction and the right button for how it's checked.
   const ACTION = { photo: "📷 Upload photo", photo_admin: "📷 Upload photo", self: "✅ Mark as done", qr_event: "🔑 Enter event code" };
   const HOW = { self: "instant XP", photo: "photo · approved by admin", photo_admin: "photo · approved by admin", qr_event: "event code", automatic: "automatic" };
-  $("app").innerHTML = `<h2>Earn XP</h2><p class="slogan">Talk is cheap. Proof earns XP.</p><p class="mute">Tap an activity to see what to do.</p><p id="msg" class="mute"></p><div class="actgrid">` + data.map(a => `<div class="card act" id="ac_${esc(a.id)}">
+  $("app").innerHTML = `<h2>Earn XP</h2><p class="slogan">Talk is cheap. Proof earns XP.</p>${payCta("Browse the activities now. Pay to start submitting them and earning XP.")}<p class="mute">Tap an activity to see what to do.</p><p id="msg" class="mute"></p><div class="actgrid">` + data.map(a => `<div class="card act" id="ac_${esc(a.id)}">
     <div class="row" role="button" tabindex="0" aria-expanded="false" onclick="openAct('${esc(a.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAct('${esc(a.id)}')}" style="cursor:pointer">
       <span class="acticon" aria-hidden="true">${actIcon(a)}</span>
       <div style="flex:1;min-width:0"><b>${esc(a.name)}</b><br><span class="mute">${esc(a.category)} · ${a.frequency_limit} per ${a.frequency_period} · ${HOW[a.verification_type] || ""}</span></div>
       <span style="white-space:nowrap"><span class="pill">+${a.xp_value}</span> <span class="mute chev">›</span></span></div>
     <div class="actdet" hidden><p>📝 ${esc(a.description || "Complete this activity to earn XP.")}</p>${actQuestions(a)}
       ${a.verification_type === "automatic" ? `<p class="mute">Nothing to submit – XP is added automatically.</p>`
-        : `<button class="s" onclick="doAct('${esc(a.id)}')">${ACTION[a.verification_type] || "Go"}</button><p class="actmsg mute"></p>`}</div></div>`).join("") + `</div>`;
+        : member ? `<button class="s" onclick="doAct('${esc(a.id)}')">${ACTION[a.verification_type] || "Go"}</button><p class="actmsg mute"></p>` : payBtn()}</div></div>`).join("") + `</div>`;
 }
 // Each activity's icon; an activity added later gets its category's icon.
 const ACT_ICONS = { "Campus Cleanup": "🧹", "Campus Gardening": "🌻", "Plant a Tree": "🌳", "Sustainability Event": "🎪",
@@ -1063,10 +1074,10 @@ async function fp() {
   const top = Object.keys(est).sort((a, b) => est[b].kg - est[a].kg).slice(0, 2);
   const acts = await activitiesIn(top.flatMap(c => LOGS[c].acts));
   if (tab !== "fp") return;
-  $("app").innerHTML = `<h2>Your estimated carbon footprint</h2>
+  $("app").innerHTML = `<h2>Your estimated carbon footprint</h2>${payCta("Your dashboard is open. Pay to log your real travel, bills and meals.")}
   <div class="card"><b style="font-size:1.8rem">${total.toFixed(1)} t CO₂e</b> <span class="mute">per year</span>
   <p class="mute">${Math.abs(diff) < 10 ? "About the same as" : `${Math.abs(diff)}% ${diff > 0 ? "above" : "below"}`} India's average of ${INDIA_AVG_T} t per person.${logs.length ? ` You logged ${Math.round(month)} kg in the last 30 days.` : ""}</p>
-  <button onclick="logScreen('transport')">+ Log activity</button></div><div class="dash">` +
+  ${member ? `<button onclick="logScreen('transport')">+ Log activity</button>` : payBtn("")}</div><div class="dash">` +
   GROUPS.map(([label, desc, cats], i) => `<div class="card"><div class="row"><b>${label}</b><b>${Math.round(groupKg[i])} kg / yr</b></div><span class="mute">${desc}</span>
     <div class="bar" style="margin:.5rem 0"><i style="width:${Math.round(groupKg[i] / max * 100)}%"></i></div>` +
     cats.map(c => `<div class="row mute"><span>${LOGS[c].icon} ${LOGS[c].label}</span><span>${Math.round(est[c].kg)} kg · ${est[c].src}</span></div>`).join("") + `</div>`).join("") +
@@ -1082,6 +1093,7 @@ async function fp() {
 }
 let billPath = null;
 function logScreen(cat) {
+  if (!member) return show("pay");
   const c = LOGS[cat], today = iso(Date.now());
   billPath = null;
   $("app").innerHTML = `<h2>Log activity</h2><p class="slogan">Little green steps add up to a big green change.</p><div class="card form">
@@ -1136,6 +1148,7 @@ async function deleteLog(id) {
 }
 
 async function ranks() {
+  if (!member && me.role === "student") return locked("Leaderboard", "Your rank says what you did for the planet.", "See where you stand among students of your institution, and climb the ranks with every verified activity.");
   const data = await api("/api/leaderboard", null, "GET").catch(() => []);
   $("app").innerHTML = `<h2>Leaderboard</h2><p class="slogan">Your rank says what you did for the planet.</p>
   <div class="card board-goal"><h3 style="margin-top:0">How the leaderboard works</h3><div class="goal">
@@ -1195,7 +1208,7 @@ const FAQ = [
   ["Institutions and partners", [
     ["How can our college or company work with GreenXP?", "Contact us at " + "<a href=\"mailto:greenxpglobal@gmail.com\">greenxpglobal@gmail.com</a>" + ". Institutions get an admin portal to review proofs, run event codes and issue certificates, and partners can sponsor rewards."],
     ["My account has been blocked. What can I do?", "We email you the reason. If you think it's a mistake, contact us and we'll look into it."],
-    ["How do I contact the GreenXP team?", "Use the <b>Help</b> menu to send us a question, or email <a href=\"mailto:greenxpglobal@gmail.com\">greenxpglobal@gmail.com</a>. We reply by email."],
+    ["How do I contact the GreenXP team?", "Use the <b>Contact</b> menu to send us a question, or email <a href=\"mailto:greenxpglobal@gmail.com\">greenxpglobal@gmail.com</a>. We reply by email."],
   ]],
 ];
 function faq(topic = "All") {
@@ -1207,7 +1220,7 @@ function faq(topic = "All") {
   <div class="faqtopics">${topics.map(t => `<button class="s ${t === topic ? "" : "o"}" onclick="faq('${t}')">${t}</button>`).join("")}</div>
   <div id="faqlist" class="faqlist">${FAQ.filter(g => topic === "All" || g[0] === topic).map(([g, qs]) => `<section><h3>${g}</h3>` +
     qs.map(([q, a]) => `<details class="card faq"><summary>${q}</summary><p>${a}</p></details>`).join("") + `</section>`).join("")}</div>
-  <p id="faqnone" class="mute" hidden>No questions match. Try another word, or ask us from the Help menu.</p>
+  <p id="faqnone" class="mute" hidden>No questions match. Try another word, or ask us from the Contact menu.</p>
   <div class="card form" style="margin-top:1rem"><b>Still have a question?</b><p class="mute" style="margin:.3rem 0 .6rem">We reply by email, usually within a day or two.</p>
     <button class="s" onclick="${signedIn ? "show('help')" : "help('faq')"}">Ask us</button></div>`;
 }
@@ -1227,6 +1240,7 @@ const certStars = xp => Math.max(1, STAR_STEPS.filter(m => xp >= m).length);
 const starRow = n => "★".repeat(n) + "☆".repeat(5 - n);
 const studyYear = y => y >= 1 && y <= 5 ? ["1st", "2nd", "3rd", "4th", "5th"][y - 1] + " year of study" : "";
 async function cert() {
+  if (!member) return locked("Annual certificate", "A certificate that proves you made a difference.", "Earn 400+ verified XP this academic year to get a verifiable certificate with your star rating, ready to print and share on LinkedIn.");
   const [data, xp] = await Promise.all([api("/api/me/certificates", null, "GET").catch(() => []), api("/api/me/xp", null, "GET").catch(() => ({ year_earned: 0 }))]);
   const yr = +xp.year_earned || 0, left = Math.max(0, CERT_MIN_XP - yr);
   const scale = STAR_STEPS.map((m, i) => `<div><span class="stars">${starRow(i + 1)}</span><span class="mute">${i < 4 ? `${m}–${STAR_STEPS[i + 1] - 1}` : `${m}+`} XP</span></div>`).join("");

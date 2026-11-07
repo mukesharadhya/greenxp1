@@ -140,6 +140,15 @@ const admin = (req, res, next) =>
 const approved = (req, res, next) =>
   req.profile.role !== "student" || req.profile.approval_status !== "rejected" ? next()
     : res.status(403).json({ error: "Your account has been blocked. Please contact greenxpglobal@gmail.com." });
+// Students need this year's membership (paid or waived) for the leaderboard, certificates and logging footprint entries.
+// Home, Earn XP (browsing) and the footprint dashboard stay open; activity submissions are checked in submit_activity.
+const paid = wrap(async (req, res, next) => {
+  const p = req.profile;
+  if (p.role !== "student") return next();
+  const y = p.college_id ? await currentYear(p.college_id) : null;
+  const m = y && await one("select 1 from public.memberships where user_id = $1 and academic_year_id = $2 and status in ('active', 'waived') limit 1", [p.id, y.id]);
+  return m ? next() : res.status(402).json({ error: "Please pay the yearly membership to continue." });
+});
 
 // 1. The signed-in student's own data. These run as the user, so row-level security applies.
 const photoUrl = (path) => path ? getSignedUrl(s3, new GetObjectCommand({ Bucket: UPLOADS_BUCKET, Key: `photos/${path}` }), { expiresIn: 3600 }) : null;
@@ -208,7 +217,7 @@ async function myStreak(userId) {
       (select array_agg(exists (select 1 from d where day = t - i) order by i desc) from today, generate_series(0, 6) i) as week`, [userId]);
 }
 
-app.get("/api/me/certificates", auth, wrap(async (req, res) => {
+app.get("/api/me/certificates", auth, paid, wrap(async (req, res) => {
   // Newest academic year first, with the year label for each certificate.
   res.json(await q(`select c.*, y.label academic_year from public.certificates c join public.academic_years y on y.id = c.academic_year_id
     where c.user_id = $1 and c.status = 'issued' order by y.start_date desc`, [req.profile.id]));
@@ -227,7 +236,7 @@ app.get("/api/fee", auth, wrap(async (req, res) => {
     [req.profile.college_id, y.id]) : null);
 }));
 
-app.get("/api/leaderboard", auth, wrap(async (req, res) => {
+app.get("/api/leaderboard", auth, paid, wrap(async (req, res) => {
   res.json(await asUser(req.profile.id, (sql) => sql("select * from public.get_leaderboard('all', 50)")));
 }));
 
@@ -236,7 +245,7 @@ app.get("/api/footprint-logs", auth, wrap(async (req, res) => {
   res.json(await asUser(req.profile.id, (sql) => sql(`select * from public.footprint_logs where user_id = auth.uid()
     and period_end >= current_date - 364 order by period_start desc`)));
 }));
-app.post("/api/footprint-logs", auth, wrap(async (req, res) => {
+app.post("/api/footprint-logs", auth, paid, wrap(async (req, res) => {
   const { category, period_start, period_end, details, kg_co2e, bill_path } = req.body;
   try {
     await asUser(req.profile.id, (sql) => sql(`insert into public.footprint_logs (user_id, category, period_start, period_end, details, kg_co2e, bill_path)
@@ -719,7 +728,7 @@ app.put("/api/admin/certificate-template", auth, admin, wrap(async (req, res) =>
 }));
 
 // Everything printed on one student's certificate. The activities come from their verified record for that year.
-app.get("/api/me/certificates/:id/document", auth, wrap(async (req, res) => {
+app.get("/api/me/certificates/:id/document", auth, paid, wrap(async (req, res) => {
   const p = req.profile;
   const c = await one(`select c.id, c.tier, c.xp_earned, c.certificate_code, c.issued_at, c.academic_year_id, c.study_year, y.label academic_year
     from public.certificates c join public.academic_years y on y.id = c.academic_year_id
