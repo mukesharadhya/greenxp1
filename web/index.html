@@ -137,6 +137,7 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 .phcrop:after{content:"";position:absolute;inset:0;border-radius:50%;box-shadow:0 0 0 999px #0009;outline:2px solid #ffffffcc;outline-offset:-2px;pointer-events:none}
 .phctl{display:flex;align-items:center;gap:.5rem;width:min(360px,100%);margin:.6rem 0 .2rem}.phctl input{margin:0;flex:1;accent-color:#e9a23b;padding:0}
 .phctl button{min-width:44px;font-size:1.25rem;line-height:1;padding:.3rem .6rem}.phctl button:last-child{font-size:.9rem}
+#sec_main{scroll-margin-top:12px}@media(min-width:900px){#sec_main{scroll-margin-top:84px}}
 /* ---------- FAQ ---------- */
 .faqtopics{display:flex;flex-wrap:wrap;gap:.4rem;margin:.2rem 0 .6rem}
 .faq{padding:0;margin-bottom:.5rem}.faq summary{cursor:pointer;list-style:none;padding:.85rem 2.6rem .85rem 1rem;font-weight:700;position:relative}
@@ -1321,15 +1322,20 @@ function adminHeader() {
   if (me.role === "super_admin") secs.push(["institutions", "🏫 Institutions"]);
   return `<h2>🛠 Admin portal</h2><div id="stats" class="stats"></div>
   <div class="row" style="justify-content:flex-start;flex-wrap:wrap;margin-bottom:.7rem">${secs.map(([k, t]) =>
-    `<button class="${k === adminSection ? "" : "o"}" onclick="adminSection='${k}';adminView='pending';admin()">${t} <span class="pill" id="n_${k}" hidden></span></button>`).join("")}</div>`;
+    `<button class="${k === adminSection ? "" : "o"}" onclick="adminGo('${k}')">${t} <span class="pill" id="n_${k}" hidden></span></button>`).join("")}</div>`;
 }
+// The section buttons at the top: open the section and bring it into view.
+// The statistics above load a moment later and push the section down, so it is lined up again once they arrive.
+let adminJump = false;
+function adminGo(k) { adminSection = k; adminView = "pending"; admin(); adminScroll(); }
+const adminScroll = () => { adminJump = true; $("sec_main")?.scrollIntoView({ behavior: "smooth", block: "start" }); };
 async function admin() {
   if (adminSection === "institutions") return institutionsView();
   const S = SECTIONS[adminSection];
   adminSel = new Set();
   $("app").innerHTML = adminHeader() + `
-  <div class="card"><h3>${S.title}</h3>
-    <div class="row" style="justify-content:flex-start;flex-wrap:wrap">${S.views.map(([k, t]) => `<button class="s${k === adminView ? "" : " o"}" onclick="adminView='${k}';admin()">${t}</button>`).join("")}</div>
+  <div class="card" id="sec_main"><h3>${S.title}</h3>
+    <div class="row" style="justify-content:flex-start;flex-wrap:wrap">${S.views.map(([k, t]) => `<button class="s${k === adminView ? "" : " o"}" onclick="adminView='${k}';admin();adminScroll()">${t}</button>`).join("")}</div>
     <div class="row" style="flex-wrap:wrap;align-items:flex-end;margin-top:.6rem">
       <span style="flex:2;min-width:200px"><label for="as">Search</label><input id="as" type="search" placeholder="${S.placeholder}" oninput="renderQueue()"></span>
       <span style="flex:1;min-width:150px"><label for="af">${S.filter[0]}</label><select id="af" onchange="renderQueue()"><option value="">All</option></select></span></div>
@@ -1412,6 +1418,7 @@ async function loadStats() {
       .map(([t, v]) => `<div class="stat"><b>${v}</b><span class="mute">${t}</span></div>`).join("");
     for (const [k, n] of [["activities", s.pending], ["payments", s.paymentsPending]]) { const b = $("n_" + k); if (b) { b.textContent = n; b.hidden = !n; } }
   } catch (e) { $("stats").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+  if (adminJump) { adminJump = false; $("sec_main")?.scrollIntoView({ block: "start" }); }
 }
 const shown = () => {
   const S = SECTIONS[adminSection], f = $("af").value, q = ($("as")?.value || "").trim().toLowerCase();
@@ -1565,7 +1572,7 @@ async function institutionsView() {
       <label class="s" style="display:inline-block;cursor:pointer;background:var(--pri);color:#fff;border-radius:12px;padding:.35rem .8rem;font-weight:700;border-bottom:3px solid var(--prid)">📂 Choose file
         <input type="file" accept=".xlsx,.xls,.csv" onchange="readSheet(this.files[0]);this.value=''" hidden></label></p>
     <p id="bmsg" class="mute"></p><div id="bq"></div></div>
-  <div class="card"><div class="row" style="flex-wrap:wrap"><h3>🏫 Institutions</h3>
+  <div class="card" id="sec_main"><div class="row" style="flex-wrap:wrap"><h3>🏫 Institutions</h3>
     <input id="isearch" type="search" placeholder="Search name, city, state or pincode" style="max-width:320px;margin:0" oninput="renderInstTable()" aria-label="Search institutions"></div>
     <p id="msg" class="mute">Loading…</p><div id="q"></div></div><datalist id="citylist"></datalist>`;
   loadStats();
