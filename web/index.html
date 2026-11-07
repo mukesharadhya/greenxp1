@@ -12,7 +12,7 @@
 .row{display:flex;justify-content:space-between;align-items:center;gap:.6rem}.mute{color:var(--mute);font-size:.9rem}.slogan{color:var(--prid);font-weight:700;font-style:italic;margin:.1rem 0 .8rem}
 button{font:700 1rem system-ui;border:0;border-radius:12px;padding:.65rem 1rem;background:var(--pri);color:#fff;cursor:pointer;border-bottom:3px solid var(--prid)}
 button.o{background:transparent;color:var(--prid);border:2px solid var(--line)}button.s{padding:.35rem .8rem;font-size:.9rem}
-input,select{width:100%;font:inherit;padding:.65rem;border-radius:12px;border:2px solid var(--line);background:var(--card);color:var(--ink);margin:.2rem 0 .6rem}
+input,select{width:100%;max-width:100%;min-width:0;font:inherit;padding:.65rem;border-radius:12px;border:2px solid var(--line);background:var(--card);color:var(--ink);margin:.2rem 0 .6rem}
 .pill{background:var(--xp);color:#4a3500;border-radius:99px;padding:.1rem .6rem;font-weight:700;font-size:.85rem}
 .tabs{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:safe center;overflow-x:auto;gap:.3rem;background:var(--card);border-top:2px solid var(--line);padding:.4rem .4rem calc(.4rem + env(safe-area-inset-bottom,0px))}
 .tabs button{background:none;color:var(--mute);border:0;padding:.4rem .7rem;flex-shrink:0;white-space:nowrap}.tabs button.on{color:var(--prid);background:var(--line)}
@@ -70,8 +70,39 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 .actgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(270px,100%),1fr));gap:.7rem;align-items:start}.actgrid .card{margin:0}
 .actdet{margin-top:.6rem;padding-top:.6rem;border-top:1px dashed var(--line)}.actdet p{margin:.2rem 0 .6rem}.chev{font-size:1.2rem}
 .err{color:#b3261e;font-weight:700}.bar{height:12px;background:var(--line);border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pri)}
+/* ---------- Page layout: phone first, laptop from 900px ---------- */
+.app>h2:first-child,.app>h1:first-child{font:800 clamp(1.7rem,4vw,2.5rem)/1.1 "Bricolage Grotesque",system-ui,sans-serif;letter-spacing:-.02em;margin-top:.4rem}
+.app h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;margin-top:1.2rem}
+.card{box-shadow:0 1px 0 var(--line);transition:box-shadow .2s,transform .2s}
+.dash{display:grid;grid-template-columns:1fr;gap:.7rem;margin-bottom:.7rem}.dash>.card,.dash>p{margin:0}
+.lb .card{display:flex;align-items:center}.lb .medal{font-size:1.5rem;width:2.2rem;text-align:center}
+.lb .card.top{border-color:var(--xp);background:color-mix(in srgb,var(--xp) 12%,var(--card))}
+@media(max-width:899px){
+  .app{padding:.8rem .9rem 6rem}
+  .tabs{justify-content:flex-start;scrollbar-width:none;box-shadow:0 -6px 20px #0000000f}.tabs::-webkit-scrollbar{display:none}
+  .tabs button{font-size:.82rem;padding:.45rem .6rem;border-radius:10px}
+  button{min-height:44px}button.s{min-height:36px}
+  .row{flex-wrap:wrap}
+}
+@media(min-width:900px){
+  .app{max-width:680px;padding:2.2rem 2rem 3rem}
+  body:has(#tabs:not([hidden])) .app{max-width:1180px;padding:6rem 2.5rem 3rem}
+  .tabs{top:0;bottom:auto;z-index:5;border-top:0;border-bottom:2px solid var(--line);justify-content:flex-start;align-items:center;gap:.3rem;
+    padding:.7rem max(2.5rem,calc(50vw - 565px));background:color-mix(in srgb,var(--card) 88%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+  .tabs:before{content:"🌱 GreenXP";font:800 1.45rem "Bricolage Grotesque",system-ui,sans-serif;color:var(--ink);margin-right:auto;letter-spacing:-.02em}
+  .tabs button{border-radius:99px;padding:.5rem 1rem;font-size:.95rem}.tabs button:hover{color:var(--prid);background:color-mix(in srgb,var(--line) 60%,transparent)}
+  .tabs button:last-child{margin-left:.8rem;border:2px solid var(--line)}
+  .dash{grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;margin-bottom:1rem}.dash>.span{grid-column:1/-1}
+  .dash.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .card{padding:1.2rem 1.3rem}
+  .card:hover{box-shadow:0 10px 30px #0634271a}
+  .actgrid{grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1rem}
+  .form{max-width:760px}
+  .lb{max-width:860px}
+}
 /* ---------- Landing hero (log-in page) ---------- */
 body{overflow-x:clip}
+.app:has(>.landing){max-width:none!important;padding:1rem 1rem 5.5rem!important}
 .landing{--h-bg:#e4f5ec;--h-ink:#0c2e27;--h-ink2:#3f6158;--h-line:#0c2e2722;--h-teal:#11795a;--h-mari:#e9a23b;--h-glass:#ffffffc4;
   position:relative;width:100vw;margin:-1rem 0 -5.5rem calc(50% - 50vw);min-height:100svh;overflow:hidden;background:
   radial-gradient(60% 50% at 85% 10%,#ffe7b0aa,transparent 70%),radial-gradient(70% 60% at 0% 100%,#9be7c6aa,transparent 70%),var(--h-bg);color:var(--h-ink);display:flex;flex-direction:column}
@@ -81,7 +112,7 @@ body{overflow-x:clip}
 .l-topo{position:absolute;inset:0;width:100%;height:100%;fill:none;stroke:var(--h-teal);stroke-width:1;opacity:.16;pointer-events:none}
 .l-sun{position:absolute;top:-70px;right:-40px;width:300px;height:300px;border-radius:50%;background:radial-gradient(circle at 40% 38%,#ffd27a,#e9a23b 60%,#e9a23b00 72%);filter:blur(2px);opacity:.75;animation:l-glow 6s ease-in-out infinite;pointer-events:none}
 @keyframes l-glow{50%{transform:scale(1.06);opacity:.95}}
-.l-in{position:relative;z-index:1;flex:1;width:min(1180px,100% - 32px);margin:auto;display:grid;grid-template-columns:1.15fr .85fr;gap:clamp(24px,4vw,64px);align-items:center;padding:clamp(28px,6vh,72px) 0 24px}
+.l-in{position:relative;z-index:1;flex:1;width:min(1180px,100% - 32px);margin:auto;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:clamp(24px,4vw,64px);align-items:center;padding:clamp(28px,6vh,72px) 0 24px}
 .l-eyebrow{display:inline-flex;align-items:center;gap:8px;letter-spacing:.2em;text-transform:uppercase;font-size:.72rem;font-weight:800;color:var(--h-teal);margin-bottom:14px}
 .l-eyebrow:before{content:"";width:18px;height:2px;border-radius:2px;background:var(--h-mari)}
 .l-word{font:800 clamp(3.4rem,9vw,8rem)/.95 "Bricolage Grotesque",system-ui,sans-serif;letter-spacing:-.04em;margin:0 0 14px}
@@ -103,7 +134,7 @@ body{overflow-x:clip}
 .l-card h3{font:700 1.4rem "Bricolage Grotesque",system-ui,sans-serif;margin:0 0 .2rem}
 .l-chip{position:absolute;z-index:2;display:flex;align-items:center;gap:8px;background:var(--h-glass);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:1px solid #ffffff80;border-radius:14px;padding:8px 12px;font-size:.85rem;font-weight:600;box-shadow:0 10px 28px #0634272a;animation:l-float 5s ease-in-out infinite;white-space:nowrap}
 .l-chip .pill{font-size:.78rem}
-.l-chip.c1{top:-26px;left:-48px}.l-chip.c2{bottom:70px;left:-70px;animation-delay:-1.6s}.l-chip.c3{top:38%;right:-36px;animation-delay:-3.2s}
+.l-chip.c1{top:-30px;left:-40px}.l-chip.c2{bottom:-26px;left:-56px;animation-delay:-1.6s}.l-chip.c3{top:-30px;right:-24px;animation-delay:-3.2s}
 @keyframes l-float{50%{transform:translateY(-10px)}}
 .l-stats{position:relative;z-index:1;width:min(1180px,100% - 32px);margin:0 auto 18px;display:flex;flex-wrap:wrap;border-top:1px solid var(--h-line);border-bottom:1px solid var(--h-line)}
 .l-stat{flex:1 1 150px;padding:16px 18px;border-right:1px solid var(--h-line)}.l-stat:last-child{border-right:0}
@@ -120,7 +151,7 @@ body{overflow-x:clip}
 @keyframes l-sway{from{transform:rotate(-2deg)}to{transform:rotate(2deg)}}
 .l-blade{animation:l-spin 6s linear infinite}@keyframes l-spin{to{transform:rotate(360deg)}}
 .l-foot{position:relative;z-index:1;text-align:center;font-size:.85rem;color:var(--h-ink2);padding:10px 16px 18px;background:color-mix(in srgb,#2f8f5b 22%,var(--h-bg))}
-@media(max-width:860px){.l-in{grid-template-columns:1fr}.l-chip{display:none}.l-sun{width:200px;height:200px}.l-stat{flex-basis:45%}.l-stat:nth-child(2n){border-right:0}}
+@media(max-width:860px){.l-in{grid-template-columns:minmax(0,1fr)}.l-chip{display:none}.l-sun{width:200px;height:200px}.l-stat{flex-basis:45%}.l-stat:nth-child(2n){border-right:0}}
 @media(prefers-reduced-motion:reduce){.landing *{animation:none!important}}
 </style></head>
 <body><div class="app" id="app">Loading…</div><nav class="tabs" id="tabs" hidden></nav>
@@ -497,7 +528,7 @@ function approvalScreen() {
 const CONTACT_EMAIL = "greenxpglobal@gmail.com";
 function help(back) {
   if (back) $("tabs").hidden = true;
-  $("app").innerHTML = `<h2>Ask us anything</h2><div class="card"><p class="mute">Send an enquiry or ask for clarification, and we'll reply by email. You can also write to <a href="mailto:${CONTACT_EMAIL}" style="color:var(--prid);font-weight:700">${CONTACT_EMAIL}</a>.</p>
+  $("app").innerHTML = `<h2>Ask us anything</h2><div class="card form"><p class="mute">Send an enquiry or ask for clarification, and we'll reply by email. You can also write to <a href="mailto:${CONTACT_EMAIL}" style="color:var(--prid);font-weight:700">${CONTACT_EMAIL}</a>.</p>
     <label for="q_name">Your name</label><input id="q_name" maxlength="100" autocomplete="name" value="${esc(me?.full_name)}">
     <label for="q_mail">Your email</label><input id="q_mail" type="email" maxlength="200" autocomplete="email" value="${esc(me?.email)}">
     <label for="q_text">Your question</label><textarea id="q_text" rows="5" maxlength="3000"></textarea>
@@ -600,9 +631,9 @@ async function analysisScreen() {
     : `${Math.abs(diff)}% ${diff > 0 ? "above" : "below"} India's average of ${INDIA_AVG_T} t per person.`;
   $("app").innerHTML = `<h2>Your footprint</h2><p class="slogan">Small habits. Big planet.</p><div class="card"><b style="font-size:1.8rem">${t.toFixed(1)} t CO₂e</b> <span class="mute">per year (estimate)</span><p class="mute">${cmp}</p>` +
     Object.entries(CATS).map(([k, c]) => `<div class="row"><span>${c.icon} ${c.label}</span><b>${f[k]} kg</b></div><div class="bar" style="margin:.2rem 0 .7rem"><i style="width:${Math.round(f[k] / max * 100)}%"></i></div>`).join("") + `</div>
-    <h3>Where you can make the biggest difference</h3>` +
+    <h3>Where you can make the biggest difference</h3><div class="dash three">` +
     top.map(k => `<div class="card"><b>${CATS[k].icon} ${CATS[k].label}</b><p>${CATS[k].tip}</p>` +
-      (acts || []).filter(a => CATS[k].acts.includes(a.category)).map(a => `<span class="pill" style="display:inline-block;margin:.15rem 0">${esc(a.name)} +${a.xp_value} XP</span>`).join(" ") + `</div>`).join("") +
+      (acts || []).filter(a => CATS[k].acts.includes(a.category)).map(a => `<span class="pill" style="display:inline-block;margin:.15rem 0">${esc(a.name)} +${a.xp_value} XP</span>`).join(" ") + `</div>`).join("") + `</div>` +
     `<p class="mute" style="font-size:.8rem">A rough estimate from typical Indian emission factors, to show where your biggest impact is. It is not a certified measurement.</p>
     <p><button onclick="init()">Continue</button> <button class="o" onclick="surveyScreen()">Retake questionnaire</button></p>`;
 }
@@ -663,13 +694,13 @@ async function home() {
   const s = await api("/api/me/xp", null, "GET").catch(() => ({ earned: 0, spendable: 0, year_earned: 0 }));
   const e = +s.earned, l = [...LV].reverse().find(x => e >= x[0]), n = LV.find(x => x[0] > e), p = n ? Math.round((e - l[0]) / (n[0] - l[0]) * 100) : 100;
   $("app").innerHTML = `<h2>Hi ${esc((me.full_name||"").split(" ")[0])} ${l[2]}</h2><p class="slogan">${SLOGANS[Math.floor(Date.now() / 864e5) % SLOGANS.length]}</p>
-  <div class="card"><div class="row" style="justify-content:flex-start;gap:.9rem;align-items:flex-start">${passport(me.photo_url)}
+  <div class="dash"><div class="card"><div class="row" style="justify-content:flex-start;gap:.9rem;align-items:flex-start">${passport(me.photo_url)}
     <div style="min-width:0"><b>${esc(me.full_name)}</b><br><span class="mute">USN: ${esc(me.usn)}<br>Registration ID: <b>${esc(me.registration_id)}</b>${me.linkedin_url ? `<br><a href="${esc(me.linkedin_url)}" target="_blank" rel="noopener" style="color:var(--prid);font-weight:700">LinkedIn profile</a>` : ""}</span>
       <br><button class="s o" style="margin-top:.4rem" onclick="editProfile()">Edit profile</button></div></div></div>
   <div class="card"><div class="row"><b style="font-size:1.8rem">${e} XP</b><span class="pill">${l[1]}</span></div>
   <div class="bar" style="margin:.6rem 0"><i style="width:${p}%"></i></div><span class="mute">${n ? n[0]-e+" XP to "+n[1] : "Top level"} · ${s.spendable} XP to spend · ${s.year_earned} XP this year</span></div>
-  ${me.survey ? `<div class="card"><div class="row"><span>🌍 Your footprint</span><b>${(me.survey.total_kg / 1000).toFixed(1)} t CO₂e / year</b></div><p class="mute">From your questionnaire. Log your real travel, bills and meals for a more accurate figure.</p><p><button class="s" onclick="show('fp')">Open footprint dashboard</button></p></div>` : ""}
-  <p class="mute">GreenXP points are reward points, not carbon credits or money.</p>`;
+  ${me.survey ? `<div class="card span"><div class="row"><span>🌍 Your footprint</span><b>${(me.survey.total_kg / 1000).toFixed(1)} t CO₂e / year</b></div><p class="mute">From your questionnaire. Log your real travel, bills and meals for a more accurate figure.</p><p><button class="s" onclick="show('fp')">Open footprint dashboard</button></p></div>` : ""}
+  </div><p class="mute">GreenXP points are reward points, not carbon credits or money.</p>`;
 }
 async function earn() {
   let data = [], error = null;
@@ -900,16 +931,16 @@ async function fp() {
   $("app").innerHTML = `<h2>Your estimated carbon footprint</h2>
   <div class="card"><b style="font-size:1.8rem">${total.toFixed(1)} t CO₂e</b> <span class="mute">per year</span>
   <p class="mute">${Math.abs(diff) < 10 ? "About the same as" : `${Math.abs(diff)}% ${diff > 0 ? "above" : "below"}`} India's average of ${INDIA_AVG_T} t per person.${logs.length ? ` You logged ${Math.round(month)} kg in the last 30 days.` : ""}</p>
-  <button onclick="logScreen('transport')">+ Log activity</button></div>` +
+  <button onclick="logScreen('transport')">+ Log activity</button></div><div class="dash">` +
   GROUPS.map(([label, desc, cats], i) => `<div class="card"><div class="row"><b>${label}</b><b>${Math.round(groupKg[i])} kg / yr</b></div><span class="mute">${desc}</span>
     <div class="bar" style="margin:.5rem 0"><i style="width:${Math.round(groupKg[i] / max * 100)}%"></i></div>` +
     cats.map(c => `<div class="row mute"><span>${LOGS[c].icon} ${LOGS[c].label}</span><span>${Math.round(est[c].kg)} kg · ${est[c].src}</span></div>`).join("") + `</div>`).join("") +
-  `<h3>Recommendations for you</h3>` +
+  `</div><h3>Recommendations for you</h3><div class="dash">` +
   top.map(c => `<div class="card"><b>${LOGS[c].icon} ${LOGS[c].label}</b><p>${advice(c, est[c])}</p>` +
     (acts || []).filter(a => LOGS[c].acts.includes(a.category)).map(a => `<span class="pill" style="display:inline-block;margin:.15rem 0">${esc(a.name)} +${a.xp_value} XP</span>`).join(" ") + `</div>`).join("") +
-  `<h3>Your entries</h3>` +
-  (logs.length ? logs.slice(0, 20).map(l => `<div class="card row"><span>${LOGS[l.category].icon} <b>${esc(logSummary(l))}</b><br><span class="mute">${l.period_start}${l.period_end !== l.period_start ? " to " + l.period_end : ""}</span></span>
-    <span><b>${Math.round(l.kg_co2e)} kg</b> <button class="s o" onclick="deleteLog('${l.id}')" aria-label="Delete entry">✕</button></span></div>`).join("")
+  `</div><h3>Your entries</h3>` +
+  (logs.length ? `<div class="dash">` + logs.slice(0, 20).map(l => `<div class="card row"><span>${LOGS[l.category].icon} <b>${esc(logSummary(l))}</b><br><span class="mute">${l.period_start}${l.period_end !== l.period_start ? " to " + l.period_end : ""}</span></span>
+    <span><b>${Math.round(l.kg_co2e)} kg</b> <button class="s o" onclick="deleteLog('${l.id}')" aria-label="Delete entry">✕</button></span></div>`).join("") + `</div>`
     : `<p class="mute">Nothing logged yet. Your estimate comes from your questionnaire until you log real data.</p>`) +
   `<p class="mute" style="font-size:.8rem">How this is calculated: each entry is multiplied by a typical Indian emission factor (for example ${GRID} kg CO₂ per kWh of grid electricity, 0.17 kg per km in a petrol car, 42 kg per LPG cylinder). Logged categories are scaled to a full year from the dates you logged; the rest use your questionnaire answers. It is an estimate, not a certified measurement.</p>
   <p><button class="s o" onclick="analysisScreen()">Questionnaire results</button></p>`;
@@ -918,7 +949,7 @@ let billPath = null;
 function logScreen(cat) {
   const c = LOGS[cat], today = iso(Date.now());
   billPath = null;
-  $("app").innerHTML = `<h2>Log activity</h2><p class="slogan">Little green steps add up to a big green change.</p><div class="card">
+  $("app").innerHTML = `<h2>Log activity</h2><p class="slogan">Little green steps add up to a big green change.</p><div class="card form">
   <label for="lc">Category</label><select id="lc" onchange="logScreen(this.value)">${Object.entries(LOGS).map(([k, v]) => `<option value="${k}"${k === cat ? " selected" : ""}>${v.icon} ${v.label}</option>`).join("")}</select>
   ${c.bill ? `<label for="bill">Upload your bill (photo or PDF, optional)</label><input id="bill" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onchange="readBill(this.files[0])"><p id="billmsg" class="mute"></p>` : ""}
   ${c.fields.map(([id, label, opts, def]) => `<label for="f_${id}">${label}</label>` + (Array.isArray(opts)
@@ -971,13 +1002,13 @@ async function deleteLog(id) {
 
 async function ranks() {
   const data = await api("/api/leaderboard", null, "GET").catch(() => []);
-  $("app").innerHTML = `<h2>Leaderboard</h2><p class="slogan">Your rank says what you did for the planet.</p>` + ((data||[]).map(r => `<div class="card row"><b>${r.rank}</b><span style="flex:1;margin-left:.6rem">${esc(r.display_name)}<br><span class="mute">${esc(r.department)}</span></span><b>${r.xp} XP</b></div>`).join("") || `<p class="mute">No XP earned yet. Be the first.</p>`);
+  $("app").innerHTML = `<h2>Leaderboard</h2><p class="slogan">Your rank says what you did for the planet.</p>` + `<div class="lb">` + ((data||[]).map(r => `<div class="card row${r.rank <= 3 ? " top" : ""}"><span class="medal">${["🥇", "🥈", "🥉"][r.rank - 1] || `<b>${r.rank}</b>`}</span><span style="flex:1;margin-left:.6rem">${esc(r.display_name)}<br><span class="mute">${esc(r.department)}</span></span><b>${r.xp} XP</b></div>`).join("") || `<p class="mute">No XP earned yet. Be the first.</p>`) + `</div>`;
 }
 async function cert() {
   const data = await api("/api/me/certificates", null, "GET").catch(() => []);
-  $("app").innerHTML = `<h2>Annual certificate</h2><p class="slogan">A certificate that proves you made a difference.</p>` + ((data||[]).map(c => `<div class="card" style="text-align:center;border:3px double var(--pri)"><div class="mute">GreenXP</div><h2>Certificate of ${esc(c.tier)}</h2><p>${esc(me.full_name)} · ${esc(me.usn)}</p>
+  $("app").innerHTML = `<h2>Annual certificate</h2><p class="slogan">A certificate that proves you made a difference.</p><div class="dash">` + ((data||[]).map(c => `<div class="card" style="text-align:center;border:3px double var(--pri)"><div class="mute">GreenXP</div><h2>Certificate of ${esc(c.tier)}</h2><p>${esc(me.full_name)} · ${esc(me.usn)}</p>
   <p>${c.xp_earned} verified XP · ${c.activities_count} activities · est. ${c.estimated_co2e} kg CO₂e*</p><b>ID: ${esc(c.certificate_code)}</b><p class="mute" style="font-size:.75rem">*Estimate based on GreenXP's methodology. Points are not carbon credits.</p><button class="s" onclick="certView('${esc(c.id)}')">View and print certificate</button></div>`).join("") || `<p class="mute">Certificates are issued at year end for students with 200+ verified XP.</p>`) +
-  `<h3>Verify a certificate</h3><div class="card"><input id="vc" placeholder="Certificate ID"><button class="s" onclick="verifyCert()">Verify</button><p id="vr"></p></div>`;
+  `</div><h3>Verify a certificate</h3><div class="card form"><input id="vc" placeholder="Certificate ID"><button class="s" onclick="verifyCert()">Verify</button><p id="vr"></p></div>`;
 }
 // The certificate as printed: one A4 landscape sheet, on the admin's template if there is one.
 function certHtml(d) {
