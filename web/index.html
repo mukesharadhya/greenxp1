@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>GreenXP</title>
+<link rel="icon" type="image/png" href="favicon.png"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="theme-color" content="#0c2e27">
+<meta name="description" content="GreenXP: earn XP for real green actions, track your carbon footprint, climb your campus leaderboard and earn a verifiable annual certificate.">
+<meta property="og:title" content="GreenXP: Go green. Level up."><meta property="og:description" content="Every green action counts. Now it scores too."><meta property="og:image" content="https://greenxp.in/logo-full.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&display=swap" rel="stylesheet">
 <style>
@@ -119,6 +122,13 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
   .tabs button.on:after{bottom:-2px}
   .tabs button.out{margin-left:1rem;padding:.45rem 1.1rem}
 }
+/* ---------- Logo ---------- */
+.tabs:before{display:none!important}
+.brand{display:none;cursor:pointer;margin-right:auto;align-items:center}.brand img{height:38px;width:auto;display:block}
+@media(min-width:900px){.brand{display:flex}}
+.brandh{display:flex;align-items:center;gap:.6rem}.brandh img{height:1.6em;width:auto}
+.l-logo{display:block;width:clamp(150px,17vw,230px);height:auto;margin:0 0 14px;filter:drop-shadow(0 12px 24px #06342733)}
+.certlogo{height:17mm;width:auto;margin:0 0 1.5mm}
 /* ---------- FAQ ---------- */
 .faqtopics{display:flex;flex-wrap:wrap;gap:.4rem;margin:.2rem 0 .6rem}
 .faq{padding:0;margin-bottom:.5rem}.faq summary{cursor:pointer;list-style:none;padding:.85rem 2.6rem .85rem 1rem;font-weight:700;position:relative}
@@ -280,6 +290,7 @@ async function authScreen() {
   insts = await pub("/api/public/colleges") || [];
   $("app").innerHTML = `<section class="landing">${heroArt()}
   <div class="l-in"><div>
+    <img class="l-logo" src="logo-mark.png" alt="GreenXP logo">
     <span class="l-eyebrow">Sustainability, gamified · for students &amp; campuses</span>
     <h1 class="l-word">Green<span>XP</span></h1>
     <p class="l-title">Go green. <em>Level up.</em></p>
@@ -291,7 +302,7 @@ async function authScreen() {
     <div class="l-chip c1">🚲 Cycled to college <span class="pill">+15 XP</span></div>
     <div class="l-chip c2">🌳 Planted a tree <span class="pill">+50 XP</span></div>
     <div class="l-chip c3">🏆 Rank #3 this week</div>
-  <div class="card l-card" id="authcard"><h3>🌱 Join the green league</h3><p class="mute" style="margin-top:0">Talk is cheap. Proof earns XP.</p>
+  <div class="card l-card" id="authcard"><h3><img src="favicon.png" alt="" style="height:1.4em;vertical-align:-.35em;margin-right:.35rem">Join the green league</h3><p class="mute" style="margin-top:0">Talk is cheap. Proof earns XP.</p>
   <div class="row" style="justify-content:flex-start;margin-bottom:.8rem"><button id="m_login" onclick="authMode('login')">Log in</button><button id="m_signup" class="o" onclick="authMode('signup')">Sign up</button></div>
   <div id="su" hidden>
     <p class="mute">Find your institution by state, city and pincode.</p>
@@ -430,7 +441,7 @@ async function signup() {
 // After signing up (or logging in before confirming), the student types the code emailed to them.
 function codeScreen(email, password) {
   $("tabs").hidden = true;
-  $("app").innerHTML = `<h1>🌱 GreenXP</h1><div class="card"><h2>Check your email</h2>
+  $("app").innerHTML = `<h1 class="brandh"><img src="logo-mark.png" alt="">GreenXP</h1><div class="card"><h2>Check your email</h2>
   <p>We sent a 6-digit code to <b>${esc(email)}</b>. Enter it to confirm your account.</p>
   <label for="cc">Code</label><input id="cc" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
   <p class="row" style="flex-wrap:wrap"><button id="ccgo">Confirm</button><a href="#" id="ccre" style="color:var(--prid);font-weight:700">Send a new code</a></p>
@@ -483,7 +494,7 @@ async function forgotPassword() {
 }
 function newPasswordScreen(email) {
   $("tabs").hidden = true;
-  $("app").innerHTML = `<h1>🌱 GreenXP</h1><div class="card"><h2>Choose a new password</h2>
+  $("app").innerHTML = `<h1 class="brandh"><img src="logo-mark.png" alt="">GreenXP</h1><div class="card"><h2>Choose a new password</h2>
   <p class="mute">If ${esc(email)} has a GreenXP account, we've emailed it a 6-digit code.</p>
   <label for="rc">Code from the email</label><input id="rc" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
   <label for="np1">New password</label><input id="np1" type="password" autocomplete="new-password">
@@ -548,7 +559,7 @@ async function saveEdit() {
 }
 function approvalScreen() {
   $("tabs").hidden = true;
-  $("app").innerHTML = `<h1>🌱 GreenXP</h1><div class="card"><h2>🚫 Your account has been blocked</h2>${me.approval_note ? `<p><b>Reason:</b> ${esc(me.approval_note)}</p>` : ""}
+  $("app").innerHTML = `<h1 class="brandh"><img src="logo-mark.png" alt="">GreenXP</h1><div class="card"><h2>🚫 Your account has been blocked</h2>${me.approval_note ? `<p><b>Reason:</b> ${esc(me.approval_note)}</p>` : ""}
     <p class="mute">If you think this is a mistake, contact us.</p><p><button onclick="help('approvalScreen')">Contact us</button></p><p><button class="o s" onclick="logout()">Log out</button></p></div>`;
 }
 
@@ -713,7 +724,7 @@ function show(t) {
   tab = t;
   const T = ["admin","super_admin"].includes(me.role) ? [["admin","Admin"],["ranks","Leaderboard"],["faq","FAQ"],["help","Help"]]
     : [["home","Home"],["earn","Earn XP"],["fp","Footprint"],["ranks","Leaderboard"],["cert","Certificate"],["faq","FAQ"],["help","Help"]];
-  $("tabs").innerHTML = T.map(x => `<button class="${x[0]==t?"on":""}" onclick="show('${x[0]}')">${x[1]}</button>`).join("") + `<button class="out" onclick="logout()">Log out</button>`;
+  $("tabs").innerHTML = `<span class="brand" onclick="show('${T[0][0]}')"><img src="logo-full.png" alt="GreenXP"></span>` + T.map(x => `<button class="${x[0]==t?"on":""}" onclick="show('${x[0]}')">${x[1]}</button>`).join("") + `<button class="out" onclick="logout()">Log out</button>`;
   $("app").classList.toggle("wide", ["admin", "earn"].includes(t));
   ({ home, earn, fp, ranks, cert, admin, faq: () => faq(), help: () => help() })[t]();
 }
@@ -1144,7 +1155,7 @@ function certHtml(d) {
   const t = d.template || {}, date = new Date(d.issued_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
   return `<div class="certwrap"><div id="certdoc" class="cert">
     ${t.background_url ? `<img class="certbg" src="${esc(t.background_url)}" alt="">` : `<div class="certframe"></div>`}
-    <div class="certin"><h1>Certificate of ${esc(d.tier)}</h1><div class="certstars">${starRow(certStars(d.xp_earned))}</div><p>This is to certify that</p>
+    <div class="certin"><img class="certlogo" src="logo-mark.png" alt="GreenXP"><h1>Certificate of ${esc(d.tier)}</h1><div class="certstars">${starRow(certStars(d.xp_earned))}</div><p>This is to certify that</p>
       <div class="who">${esc(d.student_name)}</div>
       <p>USN: <b>${esc(d.usn)}</b> &nbsp;·&nbsp; GreenXP registration ID: <b>${esc(d.registration_id)}</b>${d.study_year ? ` &nbsp;·&nbsp; ${studyYear(d.study_year)}` : ""}</p>
       <p>of <b>${esc(d.institution)}</b>${[d.city, d.state].filter(Boolean).map(x => ", " + esc(x)).join("")}${d.pincode ? " – " + esc(d.pincode) : ""}</p>
@@ -1179,7 +1190,7 @@ async function certView(id) {
 async function verifyScreen(code) {
   $("tabs").hidden = true;
   const r = await pub(`/api/public/certificates/${encodeURIComponent(code)}`);
-  $("app").innerHTML = `<h1>🌱 GreenXP</h1><div class="card"><h2>Certificate check</h2>` + (r
+  $("app").innerHTML = `<h1 class="brandh"><img src="logo-mark.png" alt="">GreenXP</h1><div class="card"><h2>Certificate check</h2>` + (r
     ? `<p><b>${r.status === "issued" ? "✅ Genuine GreenXP certificate" : "⚠ This certificate has been " + esc(r.status)}</b></p><p>${esc(r.student_name)}<br>Certificate of ${esc(r.tier)}, ${esc(r.academic_year)}<br>${esc(r.college)}</p>`
     : `<p class="err">We couldn't find this certificate.</p>`) + `<p class="mute">Certificate ID: ${esc(code)}</p><p><a href="/" style="color:var(--prid);font-weight:700">Go to GreenXP</a></p></div>`;
 }
