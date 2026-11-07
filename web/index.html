@@ -100,6 +100,22 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
   .form{max-width:760px}
   .lb{max-width:860px}
 }
+/* ---------- Navigation bar: forest green, matches the landing page ---------- */
+.tabs{background:linear-gradient(180deg,#0f3a31,#0a2722)!important;border-color:#ffffff14!important;gap:.2rem}
+.tabs button{position:relative;background:none!important;color:#a7cfc3;border:0;border-radius:10px;font:600 .95rem "Bricolage Grotesque",system-ui,sans-serif;letter-spacing:.01em;transition:color .2s}
+.tabs button:hover{color:#fff!important}
+.tabs button.on{color:#fff}
+.tabs button.on:after{content:"";position:absolute;left:22%;right:22%;height:3px;border-radius:3px;background:#e9a23b;box-shadow:0 0 12px #e9a23b99}
+.tabs button.out{color:#e9a23b;border:1.5px solid #e9a23b66!important;border-radius:99px}
+.tabs button.out:hover{background:#e9a23b!important;color:#071d18!important}
+@media(max-width:899px){.tabs button.on:after{top:0}.tabs button.out{margin-left:.3rem;padding:.3rem .8rem;align-self:center}}
+@media(min-width:900px){
+  .tabs{-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:0 8px 30px #0634272e}
+  .tabs:before{content:"GreenXP"!important;font:800 1.55rem "Bricolage Grotesque",system-ui,sans-serif;background:linear-gradient(90deg,#eafaf3 69.5%,#5fd6a8 70%);-webkit-background-clip:text;background-clip:text;color:transparent!important}
+  .tabs button{padding:.55rem 1rem}
+  .tabs button.on:after{bottom:-2px}
+  .tabs button.out{margin-left:1rem;padding:.45rem 1.1rem}
+}
 /* ---------- Landing hero (log-in page) ---------- */
 body{overflow-x:clip}
 .app:has(>.landing){max-width:none!important;padding:1rem 1rem 5.5rem!important}
@@ -683,9 +699,9 @@ async function sendPayment() {
 }
 function show(t) {
   tab = t;
-  const T = ["admin","super_admin"].includes(me.role) ? [["admin","🛠 Admin"],["ranks","🏆 Ranks"],["help","✉️ Help"]]
-    : [["home","🏠 Home"],["earn","⭐ Earn"],["fp","🌍 Footprint"],["ranks","🏆 Ranks"],["cert","🎓 Certificate"],["help","✉️ Help"]];
-  $("tabs").innerHTML = T.map(x => `<button class="${x[0]==t?"on":""}" onclick="show('${x[0]}')">${x[1]}</button>`).join("") + `<button onclick="logout()">Out</button>`;
+  const T = ["admin","super_admin"].includes(me.role) ? [["admin","Admin"],["ranks","Leaderboard"],["help","Help"]]
+    : [["home","Home"],["earn","Earn XP"],["fp","Footprint"],["ranks","Leaderboard"],["cert","Certificate"],["help","Help"]];
+  $("tabs").innerHTML = T.map(x => `<button class="${x[0]==t?"on":""}" onclick="show('${x[0]}')">${x[1]}</button>`).join("") + `<button class="out" onclick="logout()">Log out</button>`;
   $("app").classList.toggle("wide", ["admin", "earn"].includes(t));
   ({ home, earn, fp, ranks, cert, admin, help: () => help() })[t]();
 }
