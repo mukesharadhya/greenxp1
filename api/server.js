@@ -192,9 +192,21 @@ app.put("/api/me/survey", auth, wrap(async (req, res) => {
 }));
 
 app.get("/api/me/xp", auth, wrap(async (req, res) => {
-  const [s] = await asUser(req.profile.id, (sql) => sql("select * from public.my_xp_summary()"));
-  res.json(s || { earned: 0, spendable: 0, year_earned: 0 });
+  const [[s], streak] = await Promise.all([asUser(req.profile.id, (sql) => sql("select * from public.my_xp_summary()")), myStreak(req.profile.id)]);
+  res.json({ ...(s || { earned: 0, spendable: 0, year_earned: 0 }), streak });
 }));
+// Green streak: consecutive days (India time) with at least one activity submitted that wasn't rejected. A streak
+// stays alive until a whole day is missed, so it still counts in the morning before today's activity.
+async function myStreak(userId) {
+  return one(`with d as (select distinct (submitted_at at time zone 'Asia/Kolkata')::date as day from public.activity_submissions
+        where user_id = $1 and verification_status <> 'rejected'),
+      today as (select (now() at time zone 'Asia/Kolkata')::date t),
+      runs as (select max(day) last_day, count(*)::int n from (select day, day - (row_number() over (order by day))::int grp from d) g group by grp)
+    select coalesce((select n from runs, today where last_day >= t - 1 order by last_day desc limit 1), 0) as current,
+      coalesce((select max(n) from runs), 0) as longest,
+      exists (select 1 from d, today where day = t) as today,
+      (select array_agg(exists (select 1 from d where day = t - i) order by i desc) from today, generate_series(0, 6) i) as week`, [userId]);
+}
 
 app.get("/api/me/certificates", auth, wrap(async (req, res) => {
   // Newest academic year first, with the year label for each certificate.
