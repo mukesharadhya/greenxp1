@@ -142,13 +142,14 @@ const approved = (req, res, next) =>
     : res.status(403).json({ error: "Your account has been blocked. Please contact greenxpglobal@gmail.com." });
 
 // 1. The signed-in student's own data. These run as the user, so row-level security applies.
+const photoUrl = (path) => path ? getSignedUrl(s3, new GetObjectCommand({ Bucket: UPLOADS_BUCKET, Key: `photos/${path}` }), { expiresIn: 3600 }) : null;
 app.get("/api/me", auth, wrap(async (req, res) => {
   const p = req.profile, y = p.college_id ? await currentYear(p.college_id) : null;
   const [survey, member] = await Promise.all([
     one("select * from public.lifestyle_surveys where user_id = $1", [p.id]),
     y ? one("select 1 from public.memberships where user_id = $1 and academic_year_id = $2 and status in ('active', 'waived') limit 1", [p.id, y.id]) : null,
   ]);
-  res.json({ profile: p, survey, year: y, member: !!member });
+  res.json({ profile: { ...p, photo_url: await photoUrl(p.photo_path) }, survey, year: y, member: !!member });
 }));
 
 app.post("/api/me/profile", auth, wrap(async (req, res) => {
@@ -159,6 +160,23 @@ app.post("/api/me/profile", auth, wrap(async (req, res) => {
   } catch (e) {
     return res.status(400).json({ error: e.code === "23505" ? "That USN is already registered. Check it, or contact your college admin." : userError(e) });
   }
+  res.json({ ok: true });
+}));
+
+// The optional parts of a student's profile: their passport-size photo and LinkedIn link.
+app.post("/api/me/extras", auth, approved, wrap(async (req, res) => {
+  const { photoPath } = req.body, raw = String(req.body.linkedinUrl || "").trim();
+  let linkedin = null;
+  if (raw) {
+    try {
+      const u = new URL(/^https?:\/\//i.test(raw) ? raw : "https://" + raw);
+      if (!/(^|\.)linkedin\.com$/i.test(u.hostname) || raw.length > 200) throw new Error();
+      u.protocol = "https:"; linkedin = u.href;
+    } catch { return res.status(400).json({ error: "Enter your LinkedIn profile link, like https://www.linkedin.com/in/your-name" }); }
+  }
+  if (photoPath != null && (typeof photoPath !== "string" || !photoPath.startsWith(req.profile.id + "/") || photoPath.includes("..")))
+    return res.status(400).json({ error: "Invalid photo" });
+  await q("update public.profiles set linkedin_url = $2, photo_path = coalesce($3, photo_path) where id = $1", [req.profile.id, linkedin, photoPath ?? null]);
   res.json({ ok: true });
 }));
 
@@ -223,6 +241,7 @@ const UPLOAD_TYPES = {
   proofs: { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/heic": "heic", "image/heif": "heif" },
   bills: { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "application/pdf": "pdf" },
   certificates: { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" }, // admins' template and signature
+  photos: { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" }, // students' passport-size photos
   payments: { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "image/bmp": "bmp", "image/avif": "avif",
     "image/heic": "heic", "image/heif": "heif", "application/pdf": "pdf" },
 };
@@ -231,7 +250,7 @@ app.post("/api/uploads", auth, approved, wrap(async (req, res) => {
   if (bucket === "certificates" && req.profile.role === "student") return res.status(403).json({ error: "Admins only" });
   if (!ext) return res.status(400).json({ error: bucket === "bills" ? "Please upload a JPG, PNG, WebP or PDF." :
     bucket === "payments" ? "Please upload an image (JPG, PNG, HEIC…) or a PDF." :
-    bucket === "certificates" ? "Please upload a JPG, PNG or WebP image." : "Please choose a JPG, PNG, WebP or HEIC photo." });
+    ["certificates", "photos"].includes(bucket) ? "Please upload a JPG, PNG or WebP image." : "Please choose a JPG, PNG, WebP or HEIC photo." });
   const path = `${req.profile.id}/${crypto.randomUUID()}.${ext}`;
   const form = await createPresignedPost(s3, { Bucket: UPLOADS_BUCKET, Key: `${bucket}/${path}`, Expires: 300,
     Fields: { "Content-Type": contentType }, Conditions: [["content-length-range", 1, 10 * 1024 * 1024]] });
@@ -365,17 +384,22 @@ app.post("/api/admin/activities", auth, admin, wrap(async (req, res) => {
 // Students of the admin's college, newest first: everyone who can use GreenXP, or those blocked.
 app.get("/api/admin/users", auth, admin, wrap(async (req, res) => {
   const blocked = req.query.status === "rejected";
-  res.json(await q(`select u.id, u.email, u.full_name, u.usn, u.department, u.year, u.phone, u.created_at, u.approval_status,
-      u.approval_note, u.approved_at, c.name college, case when u.approved_by is not null then json_build_object('full_name', r.full_name) end approver
+  const rows = await q(`select u.id, u.email, u.full_name, u.usn, u.department, u.year, u.phone, u.created_at, u.approval_status, u.registration_id,
+      u.linkedin_url, u.photo_path, u.approval_note, u.approved_at, c.name college, case when u.approved_by is not null then json_build_object('full_name', r.full_name) end approver,
+      (select m.status from public.memberships m join public.academic_years y on y.id = m.academic_year_id and y.is_current where m.user_id = u.id limit 1) membership
     from public.profiles u left join public.profiles r on r.id = u.approved_by left join public.colleges c on c.id = u.college_id
     where ($1::uuid is null or u.college_id = $1) and u.role = 'student' and (u.approval_status = 'rejected') = $2
-    order by ${blocked ? "u.approved_at" : "u.created_at"} desc limit 200`, [reviewScope(req.profile), blocked]));
+    order by ${blocked ? "u.approved_at" : "u.created_at"} desc limit 2000`, [reviewScope(req.profile), blocked]);
+  await Promise.all(rows.map(async (u) => { u.photo_url = await photoUrl(u.photo_path); delete u.photo_path; }));
+  res.json(rows);
 }));
 
 app.post("/api/admin/users/review", auth, admin, wrap(async (req, res) => {
   const { ids, approve, reason } = req.body, waive = !!(approve && req.body.waive);
-  if (!Array.isArray(ids) || !ids.length || ids.length > 200 || !ids.every(isId))
-    return res.status(400).json({ error: "Choose between 1 and 200 users" });
+  if (!Array.isArray(ids) || !ids.length || ids.length > 500 || !ids.every(isId))
+    return res.status(400).json({ error: "Choose between 1 and 500 students" });
+  // Approving only marks a student's details as checked, so it needs no email; unblocking and waiving the fee do.
+  const wasBlocked = new Set((await q("select id from public.profiles where id = any($1::uuid[]) and approval_status = 'rejected'", [ids])).map((u) => u.id));
   const note = approve ? null : String(reason || "Not approved by your college admin").slice(0, 500);
   const done = await tx(async (sql) => {
     const rows = await sql(`update public.profiles set approval_status = $2, approval_note = $3, approved_by = $4, approved_at = now()
@@ -393,7 +417,7 @@ app.post("/api/admin/users/review", auth, admin, wrap(async (req, res) => {
       [rows.map((u) => u.id), req.user.id]);
     return rows;
   });
-  mailer.notify(() => done.map((u) => approve ? mail.accountActive(u, waive) : mail.accountBlocked(u, note)));
+  mailer.notify(() => done.filter((u) => !approve || waive || wasBlocked.has(u.id)).map((u) => approve ? mail.accountActive(u, waive) : mail.accountBlocked(u, note)));
   res.json({ done: done.length, failed: ids.filter((id) => !done.some((u) => u.id === id)).map((id) => ({ id, error: "Not a student of your college" })) });
 }));
 

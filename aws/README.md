@@ -61,6 +61,10 @@ institution isn't listed adds it after their first sign-in. It gets a copy of th
 ₹199, stays off the public sign-up list, and shows "added by a student" under Institutions until the super admin switches it on.
 The super admin reviews activities and issues certificates for every institution, since these may have no admin of their own.
 
+Admin portal > Students lists every registered student with a Download list button. **Approve** only marks a student's details as
+checked (status New or Approved); it never blocks them. Students can add a passport-size photo (S3 `photos/`) and a LinkedIn link,
+both optional, when registering or from Edit profile on Home.
+
 ## Certificates
 
 Students need at least 200 XP for the year. Admin portal has a Certificate template card for a background image and signature

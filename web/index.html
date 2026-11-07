@@ -1,13 +1,15 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>GreenXP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#effaf5;--card:#fff;--ink:#0e3b36;--mute:#4f7a73;--line:#cfe9df;--pri:#19b37a;--prid:#0f8a5c;--xp:#ffc83d}
 @media(prefers-color-scheme:dark){:root{--bg:#0a1f1c;--card:#12322d;--ink:#e6f6f1;--mute:#8fbdb3;--line:#1f4a43}}
 *{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,sans-serif}
 .app{max-width:520px;margin:auto;padding:1rem 1rem 5.5rem}h1,h2,h3{margin:.2rem 0 .5rem}
 .card{background:var(--card);border:2px solid var(--line);border-radius:16px;padding:1rem;margin-bottom:.7rem}
-.row{display:flex;justify-content:space-between;align-items:center;gap:.6rem}.mute{color:var(--mute);font-size:.9rem}
+.row{display:flex;justify-content:space-between;align-items:center;gap:.6rem}.mute{color:var(--mute);font-size:.9rem}.slogan{color:var(--prid);font-weight:700;font-style:italic;margin:.1rem 0 .8rem}
 button{font:700 1rem system-ui;border:0;border-radius:12px;padding:.65rem 1rem;background:var(--pri);color:#fff;cursor:pointer;border-bottom:3px solid var(--prid)}
 button.o{background:transparent;color:var(--prid);border:2px solid var(--line)}button.s{padding:.35rem .8rem;font-size:.9rem}
 input,select{width:100%;font:inherit;padding:.65rem;border-radius:12px;border:2px solid var(--line);background:var(--card);color:var(--ink);margin:.2rem 0 .6rem}
@@ -65,10 +67,61 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 .certsign b{display:block;border-top:.3mm solid #12312a;padding-top:1mm}
 @media print{@page{size:A4 landscape;margin:0}body *{visibility:hidden}#certdoc,#certdoc *{visibility:visible}#certdoc{position:fixed;left:0;top:0;zoom:1!important}}
 .acticon{font-size:1.9rem;line-height:1;flex-shrink:0}
-.actgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem;align-items:start}.actgrid .card{margin:0}
-@media(max-width:1000px){.actgrid{grid-template-columns:minmax(0,1fr)}}
+.actgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(270px,100%),1fr));gap:.7rem;align-items:start}.actgrid .card{margin:0}
 .actdet{margin-top:.6rem;padding-top:.6rem;border-top:1px dashed var(--line)}.actdet p{margin:.2rem 0 .6rem}.chev{font-size:1.2rem}
 .err{color:#b3261e;font-weight:700}.bar{height:12px;background:var(--line);border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pri)}
+/* ---------- Landing hero (log-in page) ---------- */
+body{overflow-x:clip}
+.landing{--h-bg:#e4f5ec;--h-ink:#0c2e27;--h-ink2:#3f6158;--h-line:#0c2e2722;--h-teal:#11795a;--h-mari:#e9a23b;--h-glass:#ffffffc4;
+  position:relative;width:100vw;margin:-1rem 0 -5.5rem calc(50% - 50vw);min-height:100svh;overflow:hidden;background:
+  radial-gradient(60% 50% at 85% 10%,#ffe7b0aa,transparent 70%),radial-gradient(70% 60% at 0% 100%,#9be7c6aa,transparent 70%),var(--h-bg);color:var(--h-ink);display:flex;flex-direction:column}
+@media(prefers-color-scheme:dark){.landing{--h-bg:#071d18;--h-ink:#eafaf3;--h-ink2:#a7cfc3;--h-line:#ffffff24;--h-teal:#4cc9a0;--h-glass:#12322dd9;
+  background:radial-gradient(60% 50% at 85% 10%,#e9a23b33,transparent 70%),radial-gradient(70% 60% at 0% 100%,#1f7a5266,transparent 70%),var(--h-bg)}}
+.landing:after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.07;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+.l-topo{position:absolute;inset:0;width:100%;height:100%;fill:none;stroke:var(--h-teal);stroke-width:1;opacity:.16;pointer-events:none}
+.l-sun{position:absolute;top:-70px;right:-40px;width:300px;height:300px;border-radius:50%;background:radial-gradient(circle at 40% 38%,#ffd27a,#e9a23b 60%,#e9a23b00 72%);filter:blur(2px);opacity:.75;animation:l-glow 6s ease-in-out infinite;pointer-events:none}
+@keyframes l-glow{50%{transform:scale(1.06);opacity:.95}}
+.l-in{position:relative;z-index:1;flex:1;width:min(1180px,100% - 32px);margin:auto;display:grid;grid-template-columns:1.15fr .85fr;gap:clamp(24px,4vw,64px);align-items:center;padding:clamp(28px,6vh,72px) 0 24px}
+.l-eyebrow{display:inline-flex;align-items:center;gap:8px;letter-spacing:.2em;text-transform:uppercase;font-size:.72rem;font-weight:800;color:var(--h-teal);margin-bottom:14px}
+.l-eyebrow:before{content:"";width:18px;height:2px;border-radius:2px;background:var(--h-mari)}
+.l-word{font:800 clamp(3.4rem,9vw,8rem)/.95 "Bricolage Grotesque",system-ui,sans-serif;letter-spacing:-.04em;margin:0 0 14px}
+.l-word span{background:linear-gradient(180deg,#5fd6a8,#1f7a52);-webkit-background-clip:text;background-clip:text;color:transparent}
+.l-title{font:700 clamp(1.7rem,3.4vw,2.8rem)/1.1 "Bricolage Grotesque",system-ui,sans-serif;letter-spacing:-.02em;margin:0 0 10px}
+.l-title em{font-style:normal;color:var(--h-mari)}
+.l-theme{font:500 clamp(1.05rem,1.8vw,1.4rem)/1.35 "Bricolage Grotesque",system-ui,sans-serif;color:var(--h-teal);margin:0 0 26px;max-width:34ch}
+.l-steps{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 28px;padding:0;list-style:none}
+.l-steps li{display:flex;align-items:center;gap:8px;font-weight:700;font-size:.9rem;padding:8px 14px;border:1px solid var(--h-line);border-radius:99px;background:color-mix(in srgb,var(--h-glass) 60%,transparent)}
+.l-steps b{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--h-ink);color:var(--h-bg);font-size:.75rem}
+.l-cta{display:flex;flex-wrap:wrap;gap:14px}
+.landing .btn{display:inline-flex;align-items:center;gap:10px;border-radius:12px;padding:14px 24px;font:700 1rem system-ui,sans-serif;border:1.5px solid transparent;transition:transform .2s,box-shadow .2s,background .2s}
+.landing .btn-p{background:var(--h-mari);color:#071d18;box-shadow:4px 4px 0 var(--h-ink)}
+.landing .btn-p:after{content:"→";transition:transform .2s}
+.landing .btn-p:hover{transform:translate(-2px,-2px);box-shadow:6px 6px 0 var(--h-ink)}.landing .btn-p:hover:after{transform:translateX(3px)}
+.landing .btn-g{background:transparent;color:var(--h-ink);border-color:var(--h-line)}.landing .btn-g:hover{border-color:var(--h-teal);color:var(--h-teal)}
+.l-side{position:relative}
+.landing .l-card{background:var(--h-glass);-webkit-backdrop-filter:blur(18px) saturate(160%);backdrop-filter:blur(18px) saturate(160%);border:1px solid #ffffff80;border-radius:22px;padding:1.3rem;margin:0;box-shadow:inset 0 1px 0 #ffffffb0,0 24px 60px #0634272e}
+.l-card h3{font:700 1.4rem "Bricolage Grotesque",system-ui,sans-serif;margin:0 0 .2rem}
+.l-chip{position:absolute;z-index:2;display:flex;align-items:center;gap:8px;background:var(--h-glass);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:1px solid #ffffff80;border-radius:14px;padding:8px 12px;font-size:.85rem;font-weight:600;box-shadow:0 10px 28px #0634272a;animation:l-float 5s ease-in-out infinite;white-space:nowrap}
+.l-chip .pill{font-size:.78rem}
+.l-chip.c1{top:-26px;left:-48px}.l-chip.c2{bottom:70px;left:-70px;animation-delay:-1.6s}.l-chip.c3{top:38%;right:-36px;animation-delay:-3.2s}
+@keyframes l-float{50%{transform:translateY(-10px)}}
+.l-stats{position:relative;z-index:1;width:min(1180px,100% - 32px);margin:0 auto 18px;display:flex;flex-wrap:wrap;border-top:1px solid var(--h-line);border-bottom:1px solid var(--h-line)}
+.l-stat{flex:1 1 150px;padding:16px 18px;border-right:1px solid var(--h-line)}.l-stat:last-child{border-right:0}
+.l-stat b{display:block;font:700 clamp(1.7rem,3vw,2.5rem)/1.1 "Bricolage Grotesque",system-ui,sans-serif;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.l-stat:nth-child(5) b{color:var(--h-mari)}
+.l-stat span{display:block;font-size:.7rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--h-ink2)}
+.l-marq{position:relative;z-index:1;overflow:hidden;background:var(--h-ink);color:var(--h-bg);padding:10px 0;font:700 1rem "Bricolage Grotesque",system-ui,sans-serif}
+.l-marq div{display:flex;gap:40px;width:max-content;animation:l-marq 38s linear infinite}
+.l-marq span:after{content:"✦";color:var(--h-mari);margin-left:40px}
+@keyframes l-marq{to{transform:translateX(-50%)}}
+.l-land{position:relative;z-index:0;display:block;width:100%;height:clamp(70px,11vw,150px);margin-top:-8px}
+.l-tree{transform-box:fill-box;transform-origin:50% 100%;animation:l-sway 4s ease-in-out infinite alternate}
+.l-tree:nth-of-type(2n){animation-delay:-2s}
+@keyframes l-sway{from{transform:rotate(-2deg)}to{transform:rotate(2deg)}}
+.l-blade{animation:l-spin 6s linear infinite}@keyframes l-spin{to{transform:rotate(360deg)}}
+.l-foot{position:relative;z-index:1;text-align:center;font-size:.85rem;color:var(--h-ink2);padding:10px 16px 18px;background:color-mix(in srgb,#2f8f5b 22%,var(--h-bg))}
+@media(max-width:860px){.l-in{grid-template-columns:1fr}.l-chip{display:none}.l-sun{width:200px;height:200px}.l-stat{flex-basis:45%}.l-stat:nth-child(2n){border-right:0}}
+@media(prefers-reduced-motion:reduce){.landing *{animation:none!important}}
 </style></head>
 <body><div class="app" id="app">Loading…</div><nav class="tabs" id="tabs" hidden></nav>
 <div class="lb" id="lb" hidden onclick="this.hidden=true"><img alt="Proof photo, full size"></div>
@@ -135,6 +188,8 @@ async function upload(bucket, file) {
 const say = (m, bad) => { const e = $("msg"); if (e) { e.textContent = m; e.className = bad ? "err" : "mute"; } };
 
 async function init() {
+  const shared = new URLSearchParams(location.search).get("verify");
+  if (shared) return verifyScreen(shared);
   if (!session) return authScreen();
   let r;
   try { r = await api("/api/me", null, "GET"); }
@@ -164,7 +219,20 @@ async function init() {
 async function authScreen() {
   $("tabs").hidden = true;
   insts = await pub("/api/public/colleges") || [];
-  $("app").innerHTML = `<h1>🌱 GreenXP</h1><p class="mute">Earn XP. Go Green. Make an Impact.</p><div class="stats" id="counters"></div><div class="card">
+  $("app").innerHTML = `<section class="landing">${heroArt()}
+  <div class="l-in"><div>
+    <span class="l-eyebrow">Sustainability, gamified · for students &amp; campuses</span>
+    <h1 class="l-word">Green<span>XP</span></h1>
+    <p class="l-title">Go green. <em>Level up.</em></p>
+    <p class="l-theme">Every green action counts. Now it scores too.</p>
+    <ul class="l-steps"><li><b>1</b>Act green</li><li><b>2</b>Upload proof</li><li><b>3</b>Earn XP</li><li><b>4</b>Get certified</li></ul>
+    <div class="l-cta"><button class="btn btn-p" onclick="heroGo('signup')">Start your green streak</button><button class="btn btn-g" onclick="heroGo('login')">I already have an account</button></div>
+  </div>
+  <div class="l-side">
+    <div class="l-chip c1">🚲 Cycled to college <span class="pill">+15 XP</span></div>
+    <div class="l-chip c2">🌳 Planted a tree <span class="pill">+50 XP</span></div>
+    <div class="l-chip c3">🏆 Rank #3 this week</div>
+  <div class="card l-card" id="authcard"><h3>🌱 Join the green league</h3><p class="mute" style="margin-top:0">Talk is cheap. Proof earns XP.</p>
   <div class="row" style="justify-content:flex-start;margin-bottom:.8rem"><button id="m_login" onclick="authMode('login')">Log in</button><button id="m_signup" class="o" onclick="authMode('signup')">Sign up</button></div>
   <div id="su" hidden>
     <p class="mute">Find your institution by state, city and pincode.</p>
@@ -179,9 +247,36 @@ async function authScreen() {
   <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password">
   <p class="row" style="flex-wrap:wrap"><button id="go" onclick="login()">Log in</button>
     <a href="#" id="forgot" onclick="forgotPassword();return false" style="color:var(--prid);font-weight:700">Forgot password?</a></p><p id="msg"></p>
-  <p><a href="#" onclick="help('authScreen');return false" style="color:var(--prid);font-weight:700">✉️ Have a question? Contact us</a></p></div>`;
+  <p><a href="#" onclick="help('authScreen');return false" style="color:var(--prid);font-weight:700">✉️ Have a question? Contact us</a></p></div></div></div>
+  <div class="l-stats" id="counters"></div>
+  <div class="l-marq" aria-hidden="true"><div>${[0, 1].map(() => ["Talk is cheap. Proof earns XP.", "Small habits. Big planet.", "Save the planet, one XP at a time.", "Your rank says what you did for the planet.", "Little green steps add up to a big green change.", "A certificate that proves you made a difference."].map(t => `<span>${t}</span>`).join("")).join("")}</div></div>
+  ${heroLand()}
+  <div class="l-foot">GreenXP points are reward points, not carbon credits or money.</div></section>`;
   pickInst(0);
   showCounters();
+}
+// Landing art: contour lines and a sun behind the hero; hills, wind turbines and trees along the bottom.
+function heroArt() {
+  const lines = Array.from({ length: 18 }, (_, i) => `<path d="M-50 ${120 + i * 38} C 300 ${40 + i * 30}, 620 ${260 + i * 34}, 1250 ${60 + i * 36}"/>`).join("");
+  const rings = Array.from({ length: 9 }, (_, i) => `<ellipse cx="1040" cy="620" rx="${50 + i * 36}" ry="${32 + i * 24}"/>`).join("");
+  return `<svg class="l-topo" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${lines}${rings}</svg><div class="l-sun" aria-hidden="true"></div>`;
+}
+function heroLand() {
+  const tree = (x, h, pine) => pine
+    ? `<g class="l-tree"><rect x="${x - 2}" y="${150 - h * .25}" width="4" height="${h * .25}" fill="#6b4f3a"/><path d="M${x} ${150 - h} L${x + h * .28} ${150 - h * .22} L${x - h * .28} ${150 - h * .22} Z" fill="#1f7a52"/></g>`
+    : `<g class="l-tree"><rect x="${x - 2}" y="${150 - h * .4}" width="4" height="${h * .4}" fill="#6b4f3a"/><circle cx="${x}" cy="${150 - h * .62}" r="${h * .3}" fill="#2f9e62"/></g>`;
+  const trees = [[60, 46], [92, 60, 1], [124, 38], [150, 52, 1], [1240, 50], [1274, 64, 1], [1310, 40], [1350, 56, 1], [1390, 44]].map(t => tree(...t)).join("");
+  const turbine = (x, h) => `<g><rect x="${x - 1.5}" y="${150 - h}" width="3" height="${h}" fill="#cfe9df"/><g transform="translate(${x} ${150 - h})"><g class="l-blade" fill="#eafaf3">${[0, 120, 240].map(a => `<path transform="rotate(${a})" d="M0 0 L3 -2 L1 -${h * .45} L-1 -2 Z"/>`).join("")}</g></g></g>`;
+  return `<svg class="l-land" viewBox="0 0 1440 150" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+    <path d="M0 90 C220 40 420 50 640 80 C860 110 1040 40 1240 45 C1340 48 1400 60 1440 66 L1440 150 L0 150 Z" fill="#4cc9a0" fill-opacity=".35"/>
+    ${turbine(560, 84)}${turbine(640, 66)}${turbine(1120, 76)}
+    <path d="M0 120 C260 92 520 98 760 116 C980 132 1200 100 1440 108 L1440 150 L0 150 Z" fill="#2f8f5b" fill-opacity=".55"/>${trees}</svg>`;
+}
+// Hero buttons: switch the form to log in / sign up and bring it into view.
+function heroGo(m) {
+  authMode(m);
+  $("authcard").scrollIntoView({ behavior: "smooth", block: "center" });
+  $(m === "signup" ? "f_st" : "em").focus({ preventScroll: true });
 }
 // Linked sign-up dropdowns: each choice narrows the next (state → city → pincode → institution).
 let insts = [];
@@ -221,7 +316,7 @@ async function showCounters() {
                  ["⭐", "Activities completed", s.activities, count],
                  ["🌍", "Carbon footprint reduced (CO₂e)", +s.co2e_saved_kg, fmtKg],
                  ["🎖", "Certificates issued", s.certificates, count]];
-  box.innerHTML = items.map(([icon, label], i) => `<div class="stat"><span>${icon}</span><b id="ct${i}">0</b><span class="mute" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.04em">${label}</span></div>`).join("");
+  box.innerHTML = items.map(([icon, label], i) => `<div class="l-stat"><b id="ct${i}">0</b><span>${icon} ${label}</span></div>`).join("");
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches, t0 = performance.now(), ms = 1200;
   const step = now => {
     const p = still ? 1 : Math.min(1, (now - t0) / ms), ease = 1 - Math.pow(1 - p, 3);
@@ -359,14 +454,38 @@ function profileScreen() {
   <label for="usn">USN</label><input id="usn" value="${esc(me.usn)}"><label for="dep">Department</label>
   <select id="dep">${["CSE","ISE","ECE","EEE","ME","Civil","AI/ML","Data Science","Aeronautical","Biotechnology","Chemical","MCA","MBA","Other"].map(d => `<option${me.department === d ? " selected" : ""}>${d}</option>`).join("")}</select>
   <label for="yr">Year</label><input id="yr" type="number" min="1" max="4" value="${me.year || 1}"><label for="ph">Mobile (never shown publicly)</label><input id="ph" value="${esc(me.phone)}">
+  ${extraFields()}
   <label><input type="checkbox" id="ok" style="width:auto"> I accept the Terms, Privacy and Refund policies and understand points are not carbon credits.</label>
   <p><button onclick="saveProfile()">Continue</button></p><p id="msg"></p></div>`;
 }
 async function saveProfile() {
   if (!$("usn").value.trim() || !$("ok").checked) return say("Add your USN and accept the terms.", 1);
-  try { await api("/api/me/profile", { usn: $("usn").value.trim(), department: $("dep").value, year: +$("yr").value, phone: $("ph").value }); }
-  catch (e) { return say(e.message, 1); }
+  try {
+    await api("/api/me/profile", { usn: $("usn").value.trim(), department: $("dep").value, year: +$("yr").value, phone: $("ph").value });
+    await saveExtras();
+  } catch (e) { return say(e.message, 1); }
   init();
+}
+// Optional on the registration form and on the Edit profile screen.
+const extraFields = () => `<label for="x_photo">Passport-size photo (optional, JPG or PNG)</label><input id="x_photo" type="file" accept="image/jpeg,image/png,image/webp">
+  <label for="x_li">LinkedIn profile link (optional)</label><input id="x_li" type="url" maxlength="200" placeholder="https://www.linkedin.com/in/your-name" value="${esc(me.linkedin_url)}">`;
+async function saveExtras() {
+  const f = $("x_photo").files[0];
+  await api("/api/me/extras", { photoPath: f ? await upload("photos", f) : null, linkedinUrl: $("x_li").value.trim() });
+}
+const passport = (url, w = 70) => url ? `<img src="${esc(url)}" alt="Student photo" onclick="zoom(this.src)" style="width:${w}px;height:${Math.round(w * 9 / 7)}px;object-fit:cover;border-radius:6px;cursor:zoom-in;flex-shrink:0">`
+  : `<span aria-hidden="true" style="width:${w}px;height:${Math.round(w * 9 / 7)}px;display:grid;place-items:center;border:2px dashed var(--line);border-radius:6px;font-size:${Math.round(w / 2.6)}px;flex-shrink:0">👤</span>`;
+function editProfile() {
+  $("app").innerHTML = `<h2>Edit profile</h2><div class="card"><div style="margin-bottom:.5rem">${passport(me.photo_url, 90)}</div>${extraFields()}
+    <p><button id="x_go" onclick="saveEdit()">Save</button> <button class="o" onclick="show('home')">Cancel</button></p><p id="msg"></p></div>`;
+}
+async function saveEdit() {
+  $("x_go").disabled = true; say("Saving…");
+  try {
+    await saveExtras();
+    me = { ...(await api("/api/me", null, "GET")).profile, survey: me.survey };
+    show("home");
+  } catch (e) { say(e.message, 1); $("x_go").disabled = false; }
 }
 function approvalScreen() {
   $("tabs").hidden = true;
@@ -398,6 +517,98 @@ async function sendEnquiry() {
   } catch (e) { say(e.message, 1); }
   btn.disabled = false;
 }
+
+// Baseline lifestyle questionnaire: [section, [[id, question, [[value, label], ...]], ...]]
+const SURVEY = [
+  ["🏠 Home", [
+    ["household", "How many people share your home (or hostel room)?", [["1","Just me"],["2","2"],["4","3–4"],["6","5 or more"]]],
+    ["residence", "Where do you live?", [["hostel","Hostel / PG"],["apartment","Apartment / flat"],["house","Independent house"]]]]],
+  ["🚌 Travel", [
+    ["mode", "How do you usually travel to college?", [["walk","Walk / cycle"],["public","Bus / metro / train"],["two","Two-wheeler"],["auto","Auto / cab"],["car","Car"]]],
+    ["distance", "Typical daily round-trip distance?", [["3","Under 5 km"],["10","5–15 km"],["22","15–30 km"],["40","Over 30 km"]]]]],
+  ["⚡ Energy", [
+    ["units", "Household electricity use per month?", [["75","Under 100 units (bill under ₹500)"],["150","100–200 units (₹500–1,200)"],["300","200–400 units (₹1,200–3,000)"],["500","Over 400 units (over ₹3,000)"],["0","Don't know"]]],
+    ["cooking", "Main cooking fuel where you eat?", [["lpg","LPG cylinder"],["png","Piped gas (PNG)"],["electric","Electric / induction"],["biomass","Wood / biomass"],["mess","I eat at a mess / canteen"]]]]],
+  ["🍽 Food", [
+    ["diet", "Which best describes your diet?", [["vegan","Vegan"],["veg","Vegetarian"],["egg","Vegetarian + eggs"],["nonveg_some","Non-veg a few times a week"],["nonveg_daily","Non-veg daily"]]],
+    ["waste", "How often is food wasted on your plate or at home?", [["rare","Rarely"],["sometimes","Sometimes"],["often","Often"]]],
+    ["delivery", "How often do you order food delivery?", [["rare","Rarely"],["weekly","About once a week"],["often","Several times a week"]]]]],
+  ["🛍 Shopping", [
+    ["clothes", "New clothes bought per year?", [["low","0–5 items"],["mid","6–15 items"],["high","16+ items"]]],
+    ["online", "Online orders per month?", [["low","0–2"],["mid","3–8"],["high","9+"]]],
+    ["devices", "How often do you replace your phone or laptop?", [["low","Every 4+ years"],["mid","Every 2–3 years"],["high","Every year"]]]]],
+  ["💧 Water & waste", [
+    ["bath", "How do you usually bathe?", [["bucket","Bucket"],["short","Shower, under 10 min"],["long","Shower, over 10 min"]]],
+    ["segregate", "Do you separate wet and dry waste?", [["always","Always"],["sometimes","Sometimes"],["never","Never"]]],
+    ["plastic", "How often do you use single-use plastic (bags, bottles, cups)?", [["rare","Rarely"],["sometimes","Sometimes"],["daily","Daily"]]]]]
+];
+// Footprint categories, with the tip and matching activity categories shown when it is one of a student's biggest.
+const CATS = {
+  Energy:    { label: "Energy", icon: "⚡", acts: ["Energy"], tip: "Switch off fans, lights and chargers when you leave a room, keep the AC at 24–26 °C, and pick LED and 5-star appliances." },
+  Transport: { label: "Transport", icon: "🚌", acts: ["Transport"], tip: "Walk, cycle or take the bus or metro for some trips, and share rides when you can't." },
+  Food:      { label: "Food", icon: "🍽", acts: ["Food"], tip: "Take only what you'll eat, try more plant-based meals, and cook or eat at the mess instead of ordering in." },
+  Shopping:  { label: "Shopping", icon: "🛍", acts: ["Reuse", "Recycling"], tip: "Buy fewer, longer-lasting clothes, repair before replacing, and recycle old electronics properly." },
+  Water:     { label: "Water & waste", icon: "💧", acts: ["Water", "Waste"], tip: "Use a bucket or keep showers short, segregate waste, and carry a reusable bottle and bag." }
+};
+const INDIA_AVG_T = 1.9; // approx. per-person tonnes CO2e per year in India
+const GRID = 0.71; // kg CO2 per kWh, Indian grid average
+// Rough yearly kg CO2e per person from the questionnaire, per logging category, using typical Indian emission factors.
+function baseline(a) {
+  const hh = +a.household;
+  const units = +a.units || { hostel: 40, apartment: 50, house: 70 }[a.residence] * hh; // "don't know": typical per-person use
+  const cook = { lpg: 340, png: 300, electric: 0, biomass: 400 }; // per household per year
+  return {
+    transport: +a.distance * 300 * { walk: 0, public: 0.03, two: 0.05, auto: 0.12, car: 0.17 }[a.mode], // ~300 travel days
+    electricity: units * 12 * GRID / hh,
+    cooking: a.cooking === "mess" ? 100 : cook[a.cooking] / hh,
+    food: { vegan: 700, veg: 900, egg: 1000, nonveg_some: 1200, nonveg_daily: 1600 }[a.diet]
+      + { rare: 0, sometimes: 50, often: 150 }[a.waste] + { rare: 0, weekly: 50, often: 150 }[a.delivery],
+    shopping: { low: 50, mid: 150, high: 350 }[a.clothes] + { low: 20, mid: 60, high: 150 }[a.online] + { low: 50, mid: 100, high: 250 }[a.devices],
+    waste: { bucket: 20, short: 40, long: 80 }[a.bath] + { always: 30, sometimes: 80, never: 150 }[a.segregate] + { rare: 10, sometimes: 40, daily: 100 }[a.plastic]
+  };
+}
+// The questionnaire's own five-category view (stored with the survey and used for the admin averages).
+function footprint(a) {
+  const b = baseline(a);
+  const f = { Energy: b.electricity + b.cooking, Transport: b.transport, Food: b.food, Shopping: b.shopping, Water: b.waste };
+  for (const k in f) f[k] = Math.round(f[k]);
+  return f;
+}
+function surveyScreen() {
+  const prev = me.survey?.answers || {};
+  $("app").innerHTML = `<h2>Your green baseline</h2><p class="slogan">You can't shrink what you don't measure.</p><p class="mute">15 quick questions about your everyday life. We use them to estimate your carbon footprint and show where you can make the biggest difference.</p>` +
+    SURVEY.map(([title, qs]) => `<div class="card"><h3>${title}</h3>` + qs.map(([id, q, opts]) =>
+      `<label for="q_${id}">${q}</label><select id="q_${id}"><option value="">Choose…</option>${opts.map(([v, t]) => `<option value="${v}"${prev[id] === v ? " selected" : ""}>${t}</option>`).join("")}</select>`).join("") + `</div>`).join("") +
+    `<p><button onclick="saveSurvey()">See my analysis</button>${me.survey ? ` <button class="o" onclick="init()">Cancel</button>` : ""}</p><p id="msg"></p>`;
+}
+async function saveSurvey() {
+  const a = {};
+  for (const [, qs] of SURVEY) for (const [id] of qs) a[id] = $("q_" + id).value;
+  if (Object.values(a).some(v => !v)) return say("Please answer every question.", 1);
+  const f = footprint(a), total = Object.values(f).reduce((x, y) => x + y, 0);
+  try { me.survey = await api("/api/me/survey", { answers: a, footprint: f, total_kg: total }, "PUT"); }
+  catch (e) { return say(e.message, 1); }
+  analysisScreen();
+}
+async function analysisScreen() {
+  const f = me.survey.footprint, t = me.survey.total_kg / 1000;
+  const max = Math.max(1, ...Object.keys(CATS).map(k => f[k]));
+  const top = Object.keys(CATS).sort((x, y) => f[y] - f[x]).slice(0, 2);
+  const acts = await activitiesIn(top.flatMap(k => CATS[k].acts));
+  const diff = Math.round((t / INDIA_AVG_T - 1) * 100);
+  const cmp = Math.abs(diff) < 10 ? `About the same as India's average of ${INDIA_AVG_T} t per person.`
+    : `${Math.abs(diff)}% ${diff > 0 ? "above" : "below"} India's average of ${INDIA_AVG_T} t per person.`;
+  $("app").innerHTML = `<h2>Your footprint</h2><p class="slogan">Small habits. Big planet.</p><div class="card"><b style="font-size:1.8rem">${t.toFixed(1)} t CO₂e</b> <span class="mute">per year (estimate)</span><p class="mute">${cmp}</p>` +
+    Object.entries(CATS).map(([k, c]) => `<div class="row"><span>${c.icon} ${c.label}</span><b>${f[k]} kg</b></div><div class="bar" style="margin:.2rem 0 .7rem"><i style="width:${Math.round(f[k] / max * 100)}%"></i></div>`).join("") + `</div>
+    <h3>Where you can make the biggest difference</h3>` +
+    top.map(k => `<div class="card"><b>${CATS[k].icon} ${CATS[k].label}</b><p>${CATS[k].tip}</p>` +
+      (acts || []).filter(a => CATS[k].acts.includes(a.category)).map(a => `<span class="pill" style="display:inline-block;margin:.15rem 0">${esc(a.name)} +${a.xp_value} XP</span>`).join(" ") + `</div>`).join("") +
+    `<p class="mute" style="font-size:.8rem">A rough estimate from typical Indian emission factors, to show where your biggest impact is. It is not a certified measurement.</p>
+    <p><button onclick="init()">Continue</button> <button class="o" onclick="surveyScreen()">Retake questionnaire</button></p>`;
+}
+
+// Activities of the student's college in some categories, for the suggestions under the footprint.
+const activitiesIn = cats => api(`/api/activities?categories=${encodeURIComponent(cats.join(","))}`, null, "GET").catch(() => []);
 const UPI_ID = "mukhesharadhya@oksbi";
 async function payScreen(y) {
   $("tabs").hidden = true;
@@ -413,7 +624,7 @@ async function payScreen(y) {
     $("app").innerHTML = `<h2>Activate your year</h2><div class="card"><p>The fee for this year hasn't been set yet. Please contact your college's GreenXP admin.</p><p><button onclick="init()">Check again</button></p>${logout}</div>`;
     return;
   }
-  $("app").innerHTML = `<h2>Activate your year</h2>
+  $("app").innerHTML = `<h2>Activate your year</h2><p class="slogan">Go green. Level up. Your year of impact starts here.</p>
   ${last?.status === "failed" ? `<div class="card"><p class="err"><b>We couldn't confirm your last payment.</b></p>${last.review_note ? `<p><b>Reason:</b> ${esc(last.review_note)}</p>` : ""}<p class="mute">If you did pay, send the correct details below.</p></div>` : ""}
   <div class="card"><h1>₹${esc(f.amount)}</h1><p class="mute">Includes XP tracking, your footprint dashboard, leaderboards and your annual certificate.</p>
     <h3>1. Pay by UPI</h3><p>Scan the code with any UPI app and pay exactly <b>₹${esc(f.amount)}</b>.</p>
@@ -447,17 +658,23 @@ function show(t) {
   $("app").classList.toggle("wide", ["admin", "earn"].includes(t));
   ({ home, earn, fp, ranks, cert, admin, help: () => help() })[t]();
 }
+const SLOGANS = ["Save the planet, one XP at a time.", "Small habits. Big planet.", "Every green action counts. Now it scores too.", "Little green steps add up to a big green change.", "Go green. Level up."];
 async function home() {
   const s = await api("/api/me/xp", null, "GET").catch(() => ({ earned: 0, spendable: 0, year_earned: 0 }));
   const e = +s.earned, l = [...LV].reverse().find(x => e >= x[0]), n = LV.find(x => x[0] > e), p = n ? Math.round((e - l[0]) / (n[0] - l[0]) * 100) : 100;
-  $("app").innerHTML = `<h2>Hi ${esc((me.full_name||"").split(" ")[0])} ${l[2]}</h2><div class="card"><div class="row"><b style="font-size:1.8rem">${e} XP</b><span class="pill">${l[1]}</span></div>
-  <div class="bar" style="margin:.6rem 0"><i style="width:${p}%"></i></div><span class="mute">${n ? n[0]-e+" XP to "+n[1] : "Top level"} · ${s.spendable} XP to spend · ${s.year_earned} XP this year</span><br><span class="mute">Registration ID: <b>${esc(me.registration_id)}</b></span></div>
+  $("app").innerHTML = `<h2>Hi ${esc((me.full_name||"").split(" ")[0])} ${l[2]}</h2><p class="slogan">${SLOGANS[Math.floor(Date.now() / 864e5) % SLOGANS.length]}</p>
+  <div class="card"><div class="row" style="justify-content:flex-start;gap:.9rem;align-items:flex-start">${passport(me.photo_url)}
+    <div style="min-width:0"><b>${esc(me.full_name)}</b><br><span class="mute">USN: ${esc(me.usn)}<br>Registration ID: <b>${esc(me.registration_id)}</b>${me.linkedin_url ? `<br><a href="${esc(me.linkedin_url)}" target="_blank" rel="noopener" style="color:var(--prid);font-weight:700">LinkedIn profile</a>` : ""}</span>
+      <br><button class="s o" style="margin-top:.4rem" onclick="editProfile()">Edit profile</button></div></div></div>
+  <div class="card"><div class="row"><b style="font-size:1.8rem">${e} XP</b><span class="pill">${l[1]}</span></div>
+  <div class="bar" style="margin:.6rem 0"><i style="width:${p}%"></i></div><span class="mute">${n ? n[0]-e+" XP to "+n[1] : "Top level"} · ${s.spendable} XP to spend · ${s.year_earned} XP this year</span></div>
   ${me.survey ? `<div class="card"><div class="row"><span>🌍 Your footprint</span><b>${(me.survey.total_kg / 1000).toFixed(1)} t CO₂e / year</b></div><p class="mute">From your questionnaire. Log your real travel, bills and meals for a more accurate figure.</p><p><button class="s" onclick="show('fp')">Open footprint dashboard</button></p></div>` : ""}
   <p class="mute">GreenXP points are reward points, not carbon credits or money.</p>`;
 }
 async function earn() {
   let data = [], error = null;
   try { data = await api("/api/activities", null, "GET"); } catch (e) { error = e; }
+  if (tab !== "earn") return; // moved to another tab while this loaded
   acts = Object.fromEntries(data.map(a => [a.id, a]));
   if (error || !data.length) {
     $("app").innerHTML = `<h2>Earn XP</h2><p class="${error ? "err" : "mute"}">${error ? "Could not load activities. Please refresh or log in again." : "No activities yet. Check back soon."}</p>`;
@@ -466,7 +683,7 @@ async function earn() {
   // Tapping an activity opens its one-line instruction and the right button for how it's checked.
   const ACTION = { photo: "📷 Upload photo", photo_admin: "📷 Upload photo", self: "✅ Mark as done", qr_event: "🔑 Enter event code" };
   const HOW = { self: "instant XP", photo: "photo · approved by admin", photo_admin: "photo · approved by admin", qr_event: "event code", automatic: "automatic" };
-  $("app").innerHTML = `<h2>Earn XP</h2><p class="mute">Tap an activity to see what to do.</p><p id="msg" class="mute"></p><div class="actgrid">` + data.map(a => `<div class="card act" id="ac_${esc(a.id)}">
+  $("app").innerHTML = `<h2>Earn XP</h2><p class="slogan">Talk is cheap. Proof earns XP.</p><p class="mute">Tap an activity to see what to do.</p><p id="msg" class="mute"></p><div class="actgrid">` + data.map(a => `<div class="card act" id="ac_${esc(a.id)}">
     <div class="row" role="button" tabindex="0" aria-expanded="false" onclick="openAct('${esc(a.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAct('${esc(a.id)}')}" style="cursor:pointer">
       <span class="acticon" aria-hidden="true">${actIcon(a)}</span>
       <div style="flex:1;min-width:0"><b>${esc(a.name)}</b><br><span class="mute">${esc(a.category)} · ${a.frequency_limit} per ${a.frequency_period} · ${HOW[a.verification_type] || ""}</span></div>
@@ -679,6 +896,7 @@ async function fp() {
   const diff = Math.round((total / INDIA_AVG_T - 1) * 100);
   const top = Object.keys(est).sort((a, b) => est[b].kg - est[a].kg).slice(0, 2);
   const acts = await activitiesIn(top.flatMap(c => LOGS[c].acts));
+  if (tab !== "fp") return;
   $("app").innerHTML = `<h2>Your estimated carbon footprint</h2>
   <div class="card"><b style="font-size:1.8rem">${total.toFixed(1)} t CO₂e</b> <span class="mute">per year</span>
   <p class="mute">${Math.abs(diff) < 10 ? "About the same as" : `${Math.abs(diff)}% ${diff > 0 ? "above" : "below"}`} India's average of ${INDIA_AVG_T} t per person.${logs.length ? ` You logged ${Math.round(month)} kg in the last 30 days.` : ""}</p>
@@ -700,7 +918,7 @@ let billPath = null;
 function logScreen(cat) {
   const c = LOGS[cat], today = iso(Date.now());
   billPath = null;
-  $("app").innerHTML = `<h2>Log activity</h2><div class="card">
+  $("app").innerHTML = `<h2>Log activity</h2><p class="slogan">Little green steps add up to a big green change.</p><div class="card">
   <label for="lc">Category</label><select id="lc" onchange="logScreen(this.value)">${Object.entries(LOGS).map(([k, v]) => `<option value="${k}"${k === cat ? " selected" : ""}>${v.icon} ${v.label}</option>`).join("")}</select>
   ${c.bill ? `<label for="bill">Upload your bill (photo or PDF, optional)</label><input id="bill" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onchange="readBill(this.files[0])"><p id="billmsg" class="mute"></p>` : ""}
   ${c.fields.map(([id, label, opts, def]) => `<label for="f_${id}">${label}</label>` + (Array.isArray(opts)
@@ -753,11 +971,11 @@ async function deleteLog(id) {
 
 async function ranks() {
   const data = await api("/api/leaderboard", null, "GET").catch(() => []);
-  $("app").innerHTML = `<h2>Leaderboard</h2>` + ((data||[]).map(r => `<div class="card row"><b>${r.rank}</b><span style="flex:1;margin-left:.6rem">${esc(r.display_name)}<br><span class="mute">${esc(r.department)}</span></span><b>${r.xp} XP</b></div>`).join("") || `<p class="mute">No XP earned yet. Be the first.</p>`);
+  $("app").innerHTML = `<h2>Leaderboard</h2><p class="slogan">Your rank says what you did for the planet.</p>` + ((data||[]).map(r => `<div class="card row"><b>${r.rank}</b><span style="flex:1;margin-left:.6rem">${esc(r.display_name)}<br><span class="mute">${esc(r.department)}</span></span><b>${r.xp} XP</b></div>`).join("") || `<p class="mute">No XP earned yet. Be the first.</p>`);
 }
 async function cert() {
   const data = await api("/api/me/certificates", null, "GET").catch(() => []);
-  $("app").innerHTML = `<h2>Annual certificate</h2>` + ((data||[]).map(c => `<div class="card" style="text-align:center;border:3px double var(--pri)"><div class="mute">GreenXP</div><h2>Certificate of ${esc(c.tier)}</h2><p>${esc(me.full_name)} · ${esc(me.usn)}</p>
+  $("app").innerHTML = `<h2>Annual certificate</h2><p class="slogan">A certificate that proves you made a difference.</p>` + ((data||[]).map(c => `<div class="card" style="text-align:center;border:3px double var(--pri)"><div class="mute">GreenXP</div><h2>Certificate of ${esc(c.tier)}</h2><p>${esc(me.full_name)} · ${esc(me.usn)}</p>
   <p>${c.xp_earned} verified XP · ${c.activities_count} activities · est. ${c.estimated_co2e} kg CO₂e*</p><b>ID: ${esc(c.certificate_code)}</b><p class="mute" style="font-size:.75rem">*Estimate based on GreenXP's methodology. Points are not carbon credits.</p><button class="s" onclick="certView('${esc(c.id)}')">View and print certificate</button></div>`).join("") || `<p class="mute">Certificates are issued at year end for students with 200+ verified XP.</p>`) +
   `<h3>Verify a certificate</h3><div class="card"><input id="vc" placeholder="Certificate ID"><button class="s" onclick="verifyCert()">Verify</button><p id="vr"></p></div>`;
 }
@@ -776,15 +994,34 @@ function certHtml(d) {
         <div class="certsign">${t.signature_url ? `<img src="${esc(t.signature_url)}" alt="Signature">` : ""}<b>${esc(t.signatory_name || "Authorised signatory")}</b>${esc(t.signatory_title)}</div></div>
     </div></div></div>`;
 }
+// LinkedIn's own pages, filled in: a new post, and the Licenses & certifications section of the student's profile.
+function linkedinLinks(d) {
+  const when = new Date(d.issued_at), proof = `${location.origin}/?verify=${d.certificate_code}`;
+  return { post: "https://www.linkedin.com/feed/?" + new URLSearchParams({ shareActive: "true",
+      text: `I've earned the GreenXP Certificate of ${d.tier} with ${d.xp_earned} verified XP from sustainability activities in ${d.academic_year}. 🌱 Check it here: ${proof}` }),
+    add: "https://www.linkedin.com/profile/add?" + new URLSearchParams({ startTask: "CERTIFICATION_NAME", name: `GreenXP Certificate of ${d.tier}`, organizationName: "GreenXP",
+      issueYear: when.getFullYear(), issueMonth: when.getMonth() + 1, certUrl: proof, certId: d.certificate_code }) };
+}
 // The sheet is a fixed A4 size; on screen it shrinks to fit, and printing resets it to full size.
 const fitCert = () => { const c = $("certdoc"); c.style.zoom = Math.min(1, c.parentElement.clientWidth / c.offsetWidth); };
 async function certView(id) {
   try {
     const d = await api(`/api/me/certificates/${id}/document`, null, "GET");
     $("app").classList.add("wide");
-    $("app").innerHTML = `<div class="row"><button class="s o" onclick="show('cert')">Back</button><button class="s" onclick="window.print()">Print / save as PDF</button></div>` + certHtml(d);
+    const li = linkedinLinks(d), link = (href, text) => `<a class="s" href="${esc(href)}" target="_blank" rel="noopener" style="color:var(--prid);font-weight:700">${text}</a>`;
+    $("app").innerHTML = `<div class="row" style="flex-wrap:wrap"><button class="s o" onclick="show('cert')">Back</button><button class="s" onclick="window.print()">Print / save as PDF</button></div>
+      <div class="card"><b>Show it on LinkedIn</b><p class="mute">To post it: save the certificate as a PDF first, click Post on LinkedIn, then attach the PDF to your post.</p>
+      <div class="row" style="justify-content:flex-start;flex-wrap:wrap">${link(li.post, "📣 Post on LinkedIn")}${link(li.add, "➕ Add to LinkedIn profile")}</div></div>` + certHtml(d);
     fitCert();
   } catch (e) { alert(e.message); }
+}
+// Where a certificate's link leads, e.g. from a LinkedIn post: anyone can see that it is genuine.
+async function verifyScreen(code) {
+  $("tabs").hidden = true;
+  const r = await pub(`/api/public/certificates/${encodeURIComponent(code)}`);
+  $("app").innerHTML = `<h1>🌱 GreenXP</h1><div class="card"><h2>Certificate check</h2>` + (r
+    ? `<p><b>${r.status === "issued" ? "✅ Genuine GreenXP certificate" : "⚠ This certificate has been " + esc(r.status)}</b></p><p>${esc(r.student_name)}<br>Certificate of ${esc(r.tier)}, ${esc(r.academic_year)}<br>${esc(r.college)}</p>`
+    : `<p class="err">We couldn't find this certificate.</p>`) + `<p class="mute">Certificate ID: ${esc(code)}</p><p><a href="/" style="color:var(--prid);font-weight:700">Go to GreenXP</a></p></div>`;
 }
 async function verifyCert() {
   const code = $("vc").value.trim(), r = code && await pub(`/api/public/certificates/${encodeURIComponent(code)}`);
@@ -805,8 +1042,8 @@ const SECTIONS = {
     filter: ["Department", u => u.department || "Details not filled in"],
     empty: { pending: "No students yet.", rejected: "No blocked students." },
     reasons: ["USN doesn't match our records", "Not a student of this college", "Incomplete or incorrect details", "Duplicate account"],
-    approveMsg: n => `Unblock ${n} students?`, doneMsg: (n, ok) => `${n} student${n > 1 ? "s" : ""} ${ok ? "updated" : "blocked"}.`,
-    search: u => [u.full_name, u.email, u.usn, u.phone].join(" "), placeholder: "Search name, email, USN or mobile",
+    approveMsg: n => `Approve ${n} students?`, doneMsg: (n, ok) => `${n} student${n > 1 ? "s" : ""} ${ok ? "updated" : "blocked"}.`,
+    search: u => [u.full_name, u.email, u.usn, u.phone, u.registration_id, u.college, u.approver ? "approved" : "new"].join(" "), placeholder: "Search name, email, USN, ID, mobile, or new / approved",
     table: userTable
   },
   activities: {
@@ -950,26 +1187,41 @@ function renderQueue() {
 function renderBulkBar(list = shown()) {
   $("bulk").innerHTML = adminView === "pending" && list.length ? `<div class="row" style="margin:.3rem 0 .6rem;flex-wrap:wrap">
     ${checkbox(`id="selall" onchange="selectAll(this.checked)"${adminSel.size === list.length ? " checked" : ""}`, `Select all (${list.length})`)}
-    <span>${adminSection === "users" ? `<button class="s" onclick="reviewMany(true,undefined,true)"${adminSel.size ? "" : " disabled"} title="Waive this year's fee">Free year${adminSel.size ? ` (${adminSel.size})` : ""}</button>`
-      : `<button class="s" onclick="reviewMany(true)"${adminSel.size ? "" : " disabled"}>Approve selected${adminSel.size ? ` (${adminSel.size})` : ""}</button>`}
-    <button class="s o" onclick="reviewMany(false)"${adminSel.size ? "" : " disabled"}>${adminSection === "users" ? "Block" : "Reject"} selected</button></span></div>` : "";
+    <span><button class="s" onclick="reviewMany(true)"${adminSel.size ? "" : " disabled"}>Approve selected${adminSel.size ? ` (${adminSel.size})` : ""}</button>
+    ${adminSection === "users" ? `<button class="s" onclick="reviewMany(true,undefined,true)"${adminSel.size ? "" : " disabled"} title="Waive this year's fee">Free year</button>` : ""}
+    <button class="s o" onclick="reviewMany(false)"${adminSel.size ? "" : " disabled"}>${adminSection === "users" ? "Block" : "Reject"} selected</button>
+    ${adminSection === "users" ? `<button class="s o" onclick="downloadStudents()">⬇ Download list</button>` : ""}</span></div>` : "";
 }
-// New users as a table: select box and name frozen on the left, details scroll sideways.
+const MEMBERSHIP = { active: "✅ Paid", waived: "🎁 Free year" };
+// The list on screen, as a spreadsheet. A leading ' stops Excel running a cell as a formula.
+function downloadStudents() {
+  const cell = v => { let t = String(v ?? ""); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return `"${t.replace(/"/g, '""')}"`; };
+  const rows = [["Registration ID", "Name", "College", "Email", "USN", "Department", "Year", "Mobile", "LinkedIn", "Membership", "Signed up", "Status"],
+    ...shown().map(u => [u.registration_id, u.full_name, u.college, u.email, u.usn, u.department, u.year, u.phone, u.linkedin_url, (MEMBERSHIP[u.membership] || "Not paid").replace(/^\W+/, ""),
+      new Date(u.created_at).toLocaleDateString("en-IN"), u.approver ? "Approved" : "New"])];
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["\ufeff" + rows.map(r => r.map(cell).join(",")).join("\r\n")], { type: "text/csv" }));
+  a.download = "greenxp-students.csv"; a.click(); URL.revokeObjectURL(a.href);
+}
+// Students as a table: select box and name frozen on the left, details scroll sideways.
 function userTable(list, pending) {
   const missing = `<span class="warn" style="padding:.1rem .4rem">not filled in</span>`, allColleges = me.role === "super_admin";
   return `<p class="mute" style="font-size:.8rem;margin:.2rem 0">◀ Scroll sideways for more details – the name stays in place ▶</p>
   <div class="topscroll" id="utop"><div></div></div>
   <div class="tbl freeze" id="utbl"><table><thead><tr>
-    <th class="fz1">${pending ? "✓" : "#"}</th><th class="fz2">Student</th>${allColleges ? "<th>College</th>" : ""}<th>Email</th><th>USN</th><th>Department</th><th class="n">Year</th><th>Mobile</th>
-    <th>${pending ? "Signed up" : "Decision"}</th>${pending ? "<th>Actions</th>" : "<th>Reason</th>"}</tr></thead><tbody>` +
+    <th class="fz1">${pending ? "✓" : "#"}</th><th class="fz2">Student</th>${allColleges ? "<th>College</th>" : ""}<th>Registration ID</th><th>Email</th><th>USN</th><th>Department</th><th class="n">Year</th><th>Mobile</th><th>LinkedIn</th><th>Membership</th>
+    <th>${pending ? "Signed up" : "Decision"}</th>${pending ? "<th>Status</th><th>Actions</th>" : "<th>Reason</th>"}</tr></thead><tbody>` +
   list.map((u, i) => `<tr>
     <td class="fz1">${pending ? `<input type="checkbox" data-sel="${u.id}" style="width:auto;margin:0" onchange="toggleSel('${u.id}',this.checked)"${adminSel.has(u.id) ? " checked" : ""} aria-label="Select ${esc(u.full_name)}">` : `<span class="mute">${i + 1}</span>`}</td>
-    <td class="fz2"><b>${esc(u.full_name || "No name")}</b></td>
-    ${allColleges ? `<td>${esc(u.college)}</td>` : ""}<td>${esc(u.email)}</td><td>${u.usn ? `<b>${esc(u.usn)}</b>` : missing}</td><td>${u.department ? esc(u.department) : missing}</td>
+    <td class="fz2"><span style="display:flex;gap:.5rem;align-items:center">${passport(u.photo_url, 30)}<b>${esc(u.full_name || "No name")}</b></span></td>
+    ${allColleges ? `<td>${esc(u.college)}</td>` : ""}<td>${esc(u.registration_id)}</td><td>${esc(u.email)}</td><td>${u.usn ? `<b>${esc(u.usn)}</b>` : missing}</td><td>${u.department ? esc(u.department) : missing}</td>
     <td class="n">${u.year || "—"}</td><td>${u.phone ? esc(u.phone) : `<span class="mute">—</span>`}</td>
+    <td>${u.linkedin_url ? `<a href="${esc(u.linkedin_url)}" target="_blank" rel="noopener" style="color:var(--prid);font-weight:700">Open</a>` : `<span class="mute">—</span>`}</td>
+    <td>${MEMBERSHIP[u.membership] || `<span class="mute">Not paid</span>`}</td>
     ${pending
       ? `<td title="${esc(new Date(u.created_at).toLocaleString("en-IN"))}">${ago(u.created_at)}</td>
-         <td class="acts"><button class="s" onclick="reviewMany(true,['${u.id}'],true)">Free year</button> <button class="s o" onclick="reviewMany(false,['${u.id}'])">Block</button></td>`
+         <td>${u.approver ? `✅ Approved${u.approved_at ? " " + ago(u.approved_at) : ""}<br><span class="mute" style="font-size:.8rem">by ${esc(u.approver.full_name)}</span>` : "🆕 New"}</td>
+         <td class="acts">${u.approver ? "" : `<button class="s" onclick="reviewMany(true,['${u.id}'])">Approve</button> `}<button class="s o" onclick="reviewMany(true,['${u.id}'],true)">Free year</button> <button class="s o" onclick="reviewMany(false,['${u.id}'])">Block</button></td>`
       : `<td>🚫 Blocked ${u.approved_at ? ago(u.approved_at) : ""}${u.approver ? `<br><span class="mute" style="font-size:.8rem">by ${esc(u.approver.full_name)}</span>` : ""}<br><button class="s o" onclick="reviewMany(true,['${u.id}'])">Unblock</button></td>
          <td style="white-space:normal;min-width:180px">${u.approval_note ? esc(u.approval_note) : `<span class="mute">—</span>`}</td>`}</tr>`).join("") +
   `</tbody></table></div>`;
@@ -1030,7 +1282,8 @@ async function reviewMany(approve, ids = [...adminSel], waive = false) {
   try {
     const r = await api(S.review, { ids, approve, reason, waive });
     const failed = new Set(r.failed.map(f => f.id));
-    adminData = adminData.filter(x => !ids.includes(x.id) || failed.has(x.id));
+    if (adminSection === "users" && approve && adminView === "pending") adminData = await api(S.list(adminView), null, "GET");
+    else adminData = adminData.filter(x => !ids.includes(x.id) || failed.has(x.id));
     ids.forEach(id => adminSel.delete(id));
     renderQueue(); loadStats();
     if (r.failed.length) say([...new Set(r.failed.map(f => f.error))].join(". "), 1);
