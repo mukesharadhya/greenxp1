@@ -383,6 +383,31 @@ app.post("/api/admin/activities", auth, admin, wrap(async (req, res) => {
   res.json({ added: rows.length });
 }));
 
+// The admin's activities with their XP, for the Activity XP points card.
+app.get("/api/admin/activities", auth, admin, wrap(async (req, res) => {
+  res.json(await q(`select id, name, category, xp_value, frequency_limit, frequency_period, verification_type from public.activities
+    where college_id = $1 and active order by category, name`, [req.profile.college_id]));
+}));
+// Change the XP of several activities at once. New XP applies to submissions approved from now on (and to instant
+// "mark as done" activities); XP already awarded stays as it was. The super admin can apply the same XP to the
+// activity of the same name at every institution.
+app.put("/api/admin/activities/xp", auth, admin, wrap(async (req, res) => {
+  const changes = Array.isArray(req.body.changes) ? req.body.changes : [];
+  if (!changes.length || changes.length > 500) return res.status(400).json({ error: "No changes to save" });
+  for (const c of changes) if (typeof c.id !== "string" || !Number.isInteger(c.xp) || c.xp < 1 || c.xp > 100)
+    return res.status(400).json({ error: "XP must be a whole number from 1 to 100" });
+  const ids = changes.map((c) => c.id), xps = changes.map((c) => c.xp);
+  const mine = await q(`update public.activities a set xp_value = v.xp from unnest($1::uuid[], $2::int[]) v(id, xp)
+    where a.id = v.id and a.college_id = $3 returning a.name, a.xp_value`, [ids, xps, req.profile.college_id]);
+  let others = 0;
+  if (req.body.allColleges && req.profile.role === "super_admin" && mine.length)
+    others = (await q(`update public.activities a set xp_value = v.xp from unnest($1::text[], $2::int[]) v(name, xp)
+      where a.active and a.college_id <> $3 and lower(trim(a.name)) = lower(trim(v.name)) returning a.id`,
+      [mine.map((m) => m.name), mine.map((m) => m.xp_value), req.profile.college_id])).length;
+  await audit(req.user.id, "edit_activity_xp", "activity", null, { changes: mine, other_institutions: others });
+  res.json({ updated: mine.length, others });
+}));
+
 // Students of the admin's college, newest first: everyone who can use GreenXP, or those blocked.
 app.get("/api/admin/users", auth, admin, wrap(async (req, res) => {
   const blocked = req.query.status === "rejected";

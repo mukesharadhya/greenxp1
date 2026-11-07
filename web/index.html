@@ -138,6 +138,7 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 .phctl{display:flex;align-items:center;gap:.5rem;width:min(360px,100%);margin:.6rem 0 .2rem}.phctl input{margin:0;flex:1;accent-color:#e9a23b;padding:0}
 .phctl button{min-width:44px;font-size:1.25rem;line-height:1;padding:.3rem .6rem}.phctl button:last-child{font-size:.9rem}
 #sec_main{scroll-margin-top:12px}@media(min-width:900px){#sec_main{scroll-margin-top:84px}}
+.axin{width:80px;margin:0;padding:.4rem .5rem;text-align:right}.axin.changed{border-color:#e9a23b;background:color-mix(in srgb,#e9a23b 14%,var(--card))}
 /* ---------- FAQ ---------- */
 .faqtopics{display:flex;flex-wrap:wrap;gap:.4rem;margin:.2rem 0 .6rem}
 .faq{padding:0;margin-bottom:.5rem}.faq summary{cursor:pointer;list-style:none;padding:.85rem 2.6rem .85rem 1rem;font-weight:700;position:relative}
@@ -1351,6 +1352,10 @@ async function admin() {
       <span style="flex:2;min-width:200px"><label for="na_per">Per</label><select id="na_per"><option value="day">Day</option><option value="week">Week</option><option value="month" selected>Month</option><option value="total">Whole time (no reset)</option></select></span></div>
     ${me.role === "super_admin" ? checkbox(`id="na_all"`, "Add to all institutions") : ""}
     <p><button onclick="addActivity(this)">Add activity</button></p><p id="namsg"></p></div>
+  <div class="card" id="actxp"><div class="row" style="flex-wrap:wrap"><h3 style="margin:0">⭐ Activity XP points</h3><button class="s" id="ax_go" onclick="saveActXp(this)" disabled>Save changes</button></div>
+    <p class="mute">Set how many XP students get for each activity (1–100). New XP applies to submissions approved from now on; XP already awarded stays the same.</p>
+    ${me.role === "super_admin" ? checkbox(`id="ax_all"`, "Also apply to the activity of the same name at every institution") : ""}
+    <div id="ax_list"><p class="mute">Loading…</p></div><p id="axmsg"></p></div>
   <div class="card"><h3>🎓 Year-end certificates</h3><p class="mute">Issues certificates to members with at least 400 XP this academic year${me.role === "super_admin" ? ", at every institution" : ""}. Students who already have one are skipped.</p>
     <button class="o" onclick="issueAll()">Issue certificates</button><p id="cmsg" class="mute"></p></div>
   <div class="card"><h3>🖼 Certificate template</h3><p class="mute">Use an A4 landscape image with the middle left clear: the student's details, activities and signature are printed on top of it. Without one, a plain green border is used.</p>
@@ -1360,6 +1365,7 @@ async function admin() {
     <label for="ct_title">Their title</label><input id="ct_title" maxlength="120" placeholder="e.g. Director, GreenXP">
     <p><button onclick="saveTemplate(this)">Save template</button> <button class="o" onclick="certPreview()">Preview</button></p><p id="ctmsg"></p></div>`;
   loadTemplate();
+  loadActXp();
   loadStats();
   api("/api/admin/lifestyle-summary", null, "GET").catch(() => null).then(s => {
     if (!s || !s.responses || !$("ls")) return;
@@ -1399,6 +1405,39 @@ async function certPreview() {
     fitCert();
   } catch (e) { $("ctmsg").className = "err"; $("ctmsg").textContent = e.message; }
 }
+// Activity XP points: every activity with an XP box; only the boxes that were changed are saved.
+let actXp = [];
+async function loadActXp() {
+  const box = $("ax_list");
+  if (!box) return;
+  try { actXp = await api("/api/admin/activities", null, "GET"); } catch (e) { box.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+  const HOW = { self: "Marked done", photo: "Photo", photo_admin: "Photo", qr_event: "Event code", automatic: "Automatic" };
+  box.innerHTML = actXp.length ? `<div class="tbl" style="max-height:60vh;overflow:auto"><table><thead><tr><th>Activity</th><th>Category</th><th>Checked by</th><th>Limit</th><th class="n">XP</th></tr></thead><tbody>` +
+    actXp.map((a, i) => `<tr><td>${esc(a.name)}</td><td>${esc(a.category)}</td><td>${HOW[a.verification_type] || esc(a.verification_type)}</td>
+      <td>${a.frequency_limit} per ${esc(a.frequency_period)}</td>
+      <td class="n"><input class="axin" id="ax_${i}" type="number" min="1" max="100" step="1" value="${a.xp_value}" aria-label="XP for ${esc(a.name)}" oninput="actXpMark(${i})"></td></tr>`).join("") +
+    `</tbody></table></div>` : `<p class="mute">No activities yet. Add one above.</p>`;
+  actXpMark();
+}
+// Highlights changed boxes and keeps the Save button's count up to date.
+function actXpMark() {
+  let n = 0;
+  actXp.forEach((a, i) => { const el = $("ax_" + i); if (!el) return; const ch = +el.value !== a.xp_value; el.classList.toggle("changed", ch); n += ch; });
+  const b = $("ax_go"); if (b) { b.disabled = !n; b.textContent = n ? `Save ${n} change${n > 1 ? "s" : ""}` : "Save changes"; }
+}
+async function saveActXp(btn) {
+  const m = $("axmsg"), changes = actXp.map((a, i) => ({ id: a.id, xp: +$("ax_" + i).value, old: a.xp_value, name: a.name })).filter(c => c.xp !== c.old);
+  const bad = changes.find(c => !Number.isInteger(c.xp) || c.xp < 1 || c.xp > 100);
+  if (bad) { m.className = "err"; m.textContent = `XP for "${bad.name}" must be a whole number from 1 to 100.`; return; }
+  const all = !!$("ax_all")?.checked;
+  if (all && !confirm(`Apply ${changes.length === 1 ? "this XP" : "these XP values"} to the activity of the same name at every institution?`)) return;
+  btn.disabled = true; m.className = "mute"; m.textContent = "Saving…";
+  try {
+    const r = await api("/api/admin/activities/xp", { changes: changes.map(({ id, xp }) => ({ id, xp })), allColleges: all }, "PUT");
+    m.textContent = `✅ XP updated for ${r.updated} activit${r.updated === 1 ? "y" : "ies"}${r.others ? `, and for ${r.others} at other institutions` : ""}. New XP applies to approvals from now on.`;
+    await loadActXp();
+  } catch (e) { m.className = "err"; m.textContent = e.message; btn.disabled = false; }
+}
 async function addActivity(btn) {
   const m = $("namsg"), all = !!$("na_all")?.checked, name = $("na_name").value.trim();
   if (all && !confirm(`Add "${name}" to every institution?`)) return;
@@ -1408,6 +1447,7 @@ async function addActivity(btn) {
       verification: $("na_ver").value, limit: +$("na_lim").value, period: $("na_per").value, allColleges: all });
     m.className = "mute"; m.textContent = `✅ ${name} added${r.added > 1 ? ` to ${r.added} institutions` : ""}.`;
     $("na_name").value = $("na_desc").value = "";
+    loadActXp();
   } catch (e) { m.className = "err"; m.textContent = e.message; }
   btn.disabled = false;
 }
