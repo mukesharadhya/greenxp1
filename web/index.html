@@ -129,6 +129,14 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 .brandh{display:flex;align-items:center;gap:.6rem}.brandh img{height:1.6em;width:auto}
 .l-logo{display:block;width:clamp(150px,17vw,230px);height:auto;margin:0 0 14px;filter:drop-shadow(0 12px 24px #06342733)}
 .certlogo{height:17mm;width:auto;margin:0 0 1.5mm}
+/* ---------- Photo editor ---------- */
+.phed{margin:.2rem 0 .4rem}
+.phcrop{position:relative;width:min(260px,100%);aspect-ratio:1;overflow:hidden;border-radius:16px;background:#0c2e27;touch-action:none;cursor:grab;user-select:none}
+.phcrop:active{cursor:grabbing}
+.phcrop img{position:absolute;left:50%;top:50%;max-width:none;pointer-events:none}
+.phcrop:after{content:"";position:absolute;inset:0;border-radius:50%;box-shadow:0 0 0 999px #0009;outline:2px solid #ffffffcc;outline-offset:-2px;pointer-events:none}
+.phctl{display:flex;align-items:center;gap:.5rem;width:min(360px,100%);margin:.6rem 0 .2rem}.phctl input{margin:0;flex:1;accent-color:#e9a23b;padding:0}
+.phctl button{min-width:44px;font-size:1.25rem;line-height:1;padding:.3rem .6rem}.phctl button:last-child{font-size:.9rem}
 /* ---------- FAQ ---------- */
 .faqtopics{display:flex;flex-wrap:wrap;gap:.4rem;margin:.2rem 0 .6rem}
 .faq{padding:0;margin-bottom:.5rem}.faq summary{cursor:pointer;list-style:none;padding:.85rem 2.6rem .85rem 1rem;font-weight:700;position:relative}
@@ -536,17 +544,83 @@ async function saveProfile() {
   } catch (e) { return say(e.message, 1); }
   init();
 }
-// Optional on the registration form and on the Edit profile screen.
-const extraFields = () => `<label for="x_photo">Passport-size photo (optional, JPG or PNG)</label><input id="x_photo" type="file" accept="image/jpeg,image/png,image/webp">
+// Optional on the registration form and on the Edit profile screen. A chosen photo opens in a round frame where the
+// student drags it into place and zooms in or out; on save the framed square is cropped in the browser and uploaded.
+const extraFields = () => `<label for="x_photo">Upload your photo (optional, JPG or PNG)</label>
+  <input id="x_photo" type="file" accept="image/jpeg,image/png" onchange="photoPick(this.files[0])">
+  <div id="x_ed" class="phed" hidden>
+    <div class="phcrop" id="x_crop"><img id="x_img" alt="Your photo" draggable="false"></div>
+    <div class="phctl"><button type="button" class="s o" onclick="photoZoom(-.2)" aria-label="Zoom out">−</button>
+      <input id="x_zoom" type="range" min="1" max="4" step="0.01" value="1" oninput="photoSet(+this.value)" aria-label="Zoom">
+      <button type="button" class="s o" onclick="photoZoom(.2)" aria-label="Zoom in">+</button>
+      <button type="button" class="s o" onclick="photoSet(1, true)">Reset</button></div>
+    <p class="mute" style="font-size:.85rem;margin:.2rem 0 .6rem">Drag the photo to place it. Zoom with the slider, the − and + buttons, your mouse wheel or a two-finger pinch.</p>
+  </div>
   <label for="x_li">LinkedIn profile link (optional)</label><input id="x_li" type="url" maxlength="200" placeholder="https://www.linkedin.com/in/your-name" value="${esc(me.linkedin_url)}">`;
-async function saveExtras() {
-  const f = $("x_photo").files[0];
-  await api("/api/me/extras", { photoPath: f ? await upload("photos", f) : null, linkedinUrl: $("x_li").value.trim() });
+let PH = null; // the photo being framed: image, zoom, and offset of its centre from the frame's centre (in frame pixels)
+function photoPick(f) {
+  PH = null; $("x_ed").hidden = true;
+  if (!f) return;
+  if (!["image/jpeg", "image/png"].includes(f.type)) { $("x_photo").value = ""; return say("Please choose a JPG or PNG photo.", 1); }
+  if (f.size > 10 * 1024 * 1024) { $("x_photo").value = ""; return say("Please choose a photo under 10 MB.", 1); }
+  say("");
+  const img = $("x_img");
+  img.onload = () => { PH = { img, w: img.naturalWidth, h: img.naturalHeight, z: 1, x: 0, y: 0 }; $("x_ed").hidden = false; photoDraw(); photoBind(); };
+  img.src = URL.createObjectURL(f);
 }
-const passport = (url, w = 70) => url ? `<img src="${esc(url)}" alt="Student photo" onclick="zoom(this.src)" style="width:${w}px;height:${Math.round(w * 9 / 7)}px;object-fit:cover;border-radius:6px;cursor:zoom-in;flex-shrink:0">`
-  : `<span aria-hidden="true" style="width:${w}px;height:${Math.round(w * 9 / 7)}px;display:grid;place-items:center;border:2px dashed var(--line);border-radius:6px;font-size:${Math.round(w / 2.6)}px;flex-shrink:0">👤</span>`;
+const photoFrame = () => $("x_crop").clientWidth;
+// Keep the photo covering the whole frame, then place it.
+function photoDraw() {
+  const F = photoFrame(), s = F / Math.min(PH.w, PH.h) * PH.z, dw = PH.w * s, dh = PH.h * s;
+  PH.x = Math.max(-(dw - F) / 2, Math.min((dw - F) / 2, PH.x));
+  PH.y = Math.max(-(dh - F) / 2, Math.min((dh - F) / 2, PH.y));
+  Object.assign(PH.img.style, { width: dw + "px", height: dh + "px", transform: `translate(calc(-50% + ${PH.x}px), calc(-50% + ${PH.y}px))` });
+  $("x_zoom").value = PH.z;
+}
+function photoSet(z, reset) {
+  if (!PH) return;
+  const nz = Math.max(1, Math.min(4, z)), k = nz / PH.z; // zoom around the frame's centre
+  PH.x *= k; PH.y *= k; PH.z = nz;
+  if (reset) PH.x = PH.y = 0;
+  photoDraw();
+}
+const photoZoom = d => PH && photoSet(PH.z + d);
+// Drag with one pointer, pinch with two, zoom with the wheel.
+function photoBind() {
+  const box = $("x_crop"), pts = new Map();
+  let pinch = 0;
+  box.onpointerdown = e => { box.setPointerCapture(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]); pinch = 0; };
+  box.onpointermove = e => {
+    if (!pts.has(e.pointerId) || !PH) return;
+    const [px, py] = pts.get(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pts.size === 1) { PH.x += e.clientX - px; PH.y += e.clientY - py; photoDraw(); return; }
+    const [a, b] = [...pts.values()], dist = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    if (pinch) photoSet(PH.z * dist / pinch);
+    pinch = dist;
+  };
+  box.onpointerup = box.onpointercancel = e => { pts.delete(e.pointerId); pinch = 0; };
+  box.onwheel = e => { e.preventDefault(); photoSet(PH.z * (1 - e.deltaY * .0015)); };
+}
+// The framed square as a 600 × 600 JPG.
+function photoFile() {
+  const F = photoFrame(), s = F / Math.min(PH.w, PH.h) * PH.z, dw = PH.w * s, dh = PH.h * s, k = 600 / F;
+  const c = document.createElement("canvas"); c.width = c.height = 600;
+  const g = c.getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, 600, 600); // transparent PNGs get a white background
+  g.imageSmoothingQuality = "high";
+  g.drawImage(PH.img, ((F - dw) / 2 + PH.x) * k, ((F - dh) / 2 + PH.y) * k, dw * k, dh * k);
+  return new Promise(ok => c.toBlob(b => ok(new File([b], "photo.jpg", { type: "image/jpeg" })), "image/jpeg", .9));
+}
+async function saveExtras() {
+  await api("/api/me/extras", { photoPath: PH ? await upload("photos", await photoFile()) : null, linkedinUrl: $("x_li").value.trim() });
+  PH = null;
+}
+const passport = (url, w = 70) => url ? `<img src="${esc(url)}" alt="Student photo" onclick="zoom(this.src)" style="width:${w}px;height:${w}px;object-fit:cover;border-radius:50%;border:2px solid var(--line);cursor:zoom-in;flex-shrink:0">`
+  : `<span aria-hidden="true" style="width:${w}px;height:${w}px;display:grid;place-items:center;border:2px dashed var(--line);border-radius:50%;font-size:${Math.round(w / 2.6)}px;flex-shrink:0">👤</span>`;
 function editProfile() {
-  $("app").innerHTML = `<h2>Edit profile</h2><div class="card"><div style="margin-bottom:.5rem">${passport(me.photo_url, 90)}</div>${extraFields()}
+  PH = null;
+  $("app").innerHTML = `<h2>Edit profile</h2><div class="card form"><div class="row" style="justify-content:flex-start;gap:1rem;margin-bottom:.6rem">${passport(me.photo_url, 96)}
+    <span class="mute">${me.photo_url ? "Choose a new photo below to replace this one." : "Add a photo so your profile feels like you."}</span></div>${extraFields()}
     <p><button id="x_go" onclick="saveEdit()">Save</button> <button class="o" onclick="show('home')">Cancel</button></p><p id="msg"></p></div>`;
 }
 async function saveEdit() {
@@ -1057,7 +1131,7 @@ const FAQ = [
     ["I didn't get the verification email. What should I do?", "Wait a few minutes and check your Spam or Promotions folder. If it still hasn't arrived, contact us and tell us the email address you used."],
     ["I forgot my password.", "On the log-in page, click <b>Forgot password?</b>. We'll email you a code to set a new one."],
     ["What is my GreenXP registration ID?", "A unique ID (starting with GXP) given to every student. You'll find it on your Home page, and it is printed on your certificates."],
-    ["Can I add my photo and LinkedIn profile?", "Yes. Click <b>Edit profile</b> on your Home page to add a passport-size photo and your LinkedIn link. Both are optional. For other corrections, such as your name or USN, contact us."],
+    ["Can I add my photo and LinkedIn profile?", "Yes. Click <b>Edit profile</b> on your Home page to upload a photo (JPG or PNG), zoom and drag it into place, and add your LinkedIn link. Both are optional. For other corrections, such as your name or USN, contact us."],
   ]],
   ["Membership and payment", [
     ["Is there a fee?", "Yes, a small yearly membership fee. The amount is shown on the <b>Activate your year</b> screen. It includes XP tracking, your footprint dashboard, leaderboards and your annual certificate."],

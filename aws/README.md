@@ -1,13 +1,13 @@
-# GreenXP on AWS
+﻿# GreenXP on AWS
 
 Everything runs in **ap-south-1 (Mumbai)** from one CloudFormation stack, `greenxp` ([greenxp.yaml](greenxp.yaml)).
 
 ```
-browser ──HTTPS──> greenxp.in (13.206.152.233, EC2 in a public subnet)
-                     Caddy ──/*──────> /opt/greenxp/site (web/)
-                       └────/api/*──> Node API on 127.0.0.1:3000 ──> RDS Postgres (private subnets)
-browser ──> Cognito (sign-in)
-browser ──> S3 uploads (signed forms from the API)
+browser â”€â”€HTTPSâ”€â”€> greenxp.in (13.206.152.233, EC2 in a public subnet)
+                     Caddy â”€â”€/*â”€â”€â”€â”€â”€â”€> /opt/greenxp/site (web/)
+                       â””â”€â”€â”€â”€/api/*â”€â”€> Node API on 127.0.0.1:3000 â”€â”€> RDS Postgres (private subnets)
+browser â”€â”€> Cognito (sign-in)
+browser â”€â”€> S3 uploads (signed forms from the API)
 ```
 
 | Piece | What it is |
@@ -20,7 +20,7 @@ browser ──> S3 uploads (signed forms from the API)
 | Files | S3 bucket `greenxp-uploads-<account>` with `proofs/` and `bills/` |
 | Secrets | Secrets Manager `greenxp/app` (Anthropic, Resend) |
 
-DNS: GoDaddy A record `greenxp.in` → `13.206.152.233`. The Elastic IP is allocated outside the stack
+DNS: GoDaddy A record `greenxp.in` â†’ `13.206.152.233`. The Elastic IP is allocated outside the stack
 (`eipalloc-044fc879cc73b5b99`, passed in by deploy.ps1), so it survives server replacement and stack rebuilds.
 
 Rough cost: about USD 25/month (RDS ~15, server ~6, IPv4 address ~4, storage/Secrets ~1).
@@ -58,11 +58,11 @@ Admin portal > Payments. Check each one against the bank account: the details a 
 
 Verifying their email is all a student needs; admins can block an account under Admin portal > Students. A student whose
 institution isn't listed adds it after their first sign-in. It gets a copy of the main college's year, activities and rules at
-₹199, stays off the public sign-up list, and shows "added by a student" under Institutions until the super admin switches it on.
+â‚¹199, stays off the public sign-up list, and shows "added by a student" under Institutions until the super admin switches it on.
 The super admin reviews activities and issues certificates for every institution, since these may have no admin of their own.
 
 Admin portal > Students lists every registered student with a Download list button. **Approve** only marks a student's details as
-checked (status New or Approved); it never blocks them. Students can add a passport-size photo (S3 `photos/`) and a LinkedIn link,
+checked (status New or Approved); it never blocks them. Students can upload a photo (JPG or PNG, zoomed and positioned in the browser, saved as a 600x600 JPG; S3 `photos/`) and a LinkedIn link,
 both optional, when registering or from Edit profile on Home.
 
 ## Certificates
