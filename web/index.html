@@ -119,6 +119,15 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
   .tabs button.on:after{bottom:-2px}
   .tabs button.out{margin-left:1rem;padding:.45rem 1.1rem}
 }
+/* ---------- FAQ ---------- */
+.faqtopics{display:flex;flex-wrap:wrap;gap:.4rem;margin:.2rem 0 .6rem}
+.faq{padding:0;margin-bottom:.5rem}.faq summary{cursor:pointer;list-style:none;padding:.85rem 2.6rem .85rem 1rem;font-weight:700;position:relative}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary:after{content:"+";position:absolute;right:1rem;top:50%;transform:translateY(-50%);font:700 1.3rem system-ui;color:#e9a23b;transition:transform .2s}
+.faq[open] summary:after{transform:translateY(-50%) rotate(45deg)}
+.faq[open]{border-color:color-mix(in srgb,#e9a23b 50%,var(--line))}
+.faq p{margin:0;padding:0 1rem 1rem;color:var(--mute);line-height:1.55}.faq a{color:var(--prid);font-weight:700}
+@media(min-width:900px){.faqlist{columns:2;column-gap:1rem}.faqlist section{break-inside:avoid-column}.faqlist h3:first-child{margin-top:0}.faqlist .faq{break-inside:avoid}}
 /* ---------- Landing hero (log-in page) ---------- */
 body{overflow-x:clip}
 .app:has(>.landing){max-width:none!important;padding:1rem 1rem 5.5rem!important}
@@ -297,7 +306,7 @@ async function authScreen() {
   <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password">
   <p class="row" style="flex-wrap:wrap"><button id="go" onclick="login()">Log in</button>
     <a href="#" id="forgot" onclick="forgotPassword();return false" style="color:var(--prid);font-weight:700">Forgot password?</a></p><p id="msg"></p>
-  <p><a href="#" onclick="help('authScreen');return false" style="color:var(--prid);font-weight:700">✉️ Have a question? Contact us</a></p></div></div></div>
+  <p><a href="#" onclick="faq();return false" style="color:var(--prid);font-weight:700">❓ Read the FAQ</a> &nbsp;·&nbsp; <a href="#" onclick="help('authScreen');return false" style="color:var(--prid);font-weight:700">✉️ Contact us</a></p></div></div></div>
   <div class="l-stats" id="counters"></div>
   <div class="l-marq" aria-hidden="true"><div>${[0, 1].map(() => ["Talk is cheap. Proof earns XP.", "Small habits. Big planet.", "Save the planet, one XP at a time.", "Your rank says what you did for the planet.", "Little green steps add up to a big green change.", "A certificate that proves you made a difference."].map(t => `<span>${t}</span>`).join("")).join("")}</div></div>
   ${heroLand()}
@@ -702,11 +711,11 @@ async function sendPayment() {
 }
 function show(t) {
   tab = t;
-  const T = ["admin","super_admin"].includes(me.role) ? [["admin","Admin"],["ranks","Leaderboard"],["help","Help"]]
-    : [["home","Home"],["earn","Earn XP"],["fp","Footprint"],["ranks","Leaderboard"],["cert","Certificate"],["help","Help"]];
+  const T = ["admin","super_admin"].includes(me.role) ? [["admin","Admin"],["ranks","Leaderboard"],["faq","FAQ"],["help","Help"]]
+    : [["home","Home"],["earn","Earn XP"],["fp","Footprint"],["ranks","Leaderboard"],["cert","Certificate"],["faq","FAQ"],["help","Help"]];
   $("tabs").innerHTML = T.map(x => `<button class="${x[0]==t?"on":""}" onclick="show('${x[0]}')">${x[1]}</button>`).join("") + `<button class="out" onclick="logout()">Log out</button>`;
   $("app").classList.toggle("wide", ["admin", "earn"].includes(t));
-  ({ home, earn, fp, ranks, cert, admin, help: () => help() })[t]();
+  ({ home, earn, fp, ranks, cert, admin, faq: () => faq(), help: () => help() })[t]();
 }
 const SLOGANS = ["Save the planet, one XP at a time.", "Small habits. Big planet.", "Every green action counts. Now it scores too.", "Little green steps add up to a big green change.", "Go green. Level up."];
 async function home() {
@@ -1027,6 +1036,82 @@ async function ranks() {
     <div><b>Verified XP only</b><span class="mute">Your rank is the total XP you have earned from approved green activities. Spending XP on rewards never lowers it.</span></div>
     <div><b>Climb the ranks</b><span class="mute">The top 50 are shown here. Complete more activities to move up and earn your certificate.</span></div>
   </div><p style="margin:.9rem 0 0"><button class="s" onclick="show(&#39;earn&#39;)">Earn XP now</button></p></div>` + `<div class="board">` + ((data||[]).map(r => `<div class="card row${r.rank <= 3 ? " top" : ""}"><span class="medal">${["🥇", "🥈", "🥉"][r.rank - 1] || `<b>${r.rank}</b>`}</span><span style="flex:1;margin-left:.6rem">${esc(r.display_name)}<br><span class="mute">${esc(r.department)}</span></span><b>${r.xp} XP</b></div>`).join("") || `<p class="mute">No XP earned yet. Be the first.</p>`) + `</div>`;
+}
+// Frequently asked questions: a menu tab for signed-in users, and a link on the log-in page for everyone else.
+const FAQ = [
+  ["Getting started", [
+    ["What is GreenXP?", "GreenXP turns everyday green actions into XP. You log real activities with proof, track your carbon footprint, climb your campus leaderboard and earn an annual certificate that anyone can verify."],
+    ["Who can join?", "Students of any institution. If your institution isn't in the list when you sign up, tick <b>My institution isn't in the list</b> and add its name, city and pincode."],
+    ["How do I sign up?", "Click <b>Sign up</b>, choose your state, city, pincode and institution, then enter your name, email and a password. Confirm the code we email you, add your USN, department and year, answer the 15 quick footprint questions, and activate your year."],
+    ["I didn't get the verification email. What should I do?", "Wait a few minutes and check your Spam or Promotions folder. If it still hasn't arrived, contact us and tell us the email address you used."],
+    ["I forgot my password.", "On the log-in page, click <b>Forgot password?</b>. We'll email you a code to set a new one."],
+    ["What is my GreenXP registration ID?", "A unique ID (starting with GXP) given to every student. You'll find it on your Home page, and it is printed on your certificates."],
+    ["Can I add my photo and LinkedIn profile?", "Yes. Click <b>Edit profile</b> on your Home page to add a passport-size photo and your LinkedIn link. Both are optional. For other corrections, such as your name or USN, contact us."],
+  ]],
+  ["Membership and payment", [
+    ["Is there a fee?", "Yes, a small yearly membership fee. The amount is shown on the <b>Activate your year</b> screen. It includes XP tracking, your footprint dashboard, leaderboards and your annual certificate."],
+    ["How do I pay?", "Scan the UPI QR code with any UPI app and pay the exact amount shown. Then give us the transaction ID, upload a screenshot of the payment, or both."],
+    ["How long does activation take?", "We check each payment against our account. This usually takes a day or two, and we email you as soon as your membership is active."],
+    ["My payment wasn't confirmed. What now?", "We'll email you the reason. If you did pay, open GreenXP and send the correct transaction ID or a clearer screenshot from the same screen."],
+    ["Do I need to pay every year?", "Yes. A membership covers one academic year, so you activate GreenXP again at the start of each new year."],
+    ["Can I get a refund?", "Refunds follow the Refund policy you accepted when you signed up. To ask for one, contact us with your registration ID and payment details."],
+  ]],
+  ["Earning XP", [
+    ["How do I earn XP?", "Open <b>Earn XP</b> and tap an activity to see what to do. Depending on the activity you upload a photo as proof, mark it as done, enter an event code, or get XP automatically."],
+    ["Why can't I submit an activity again?", "Each activity counts only a set number of times per day, week or month. The limit is shown under the activity's name."],
+    ["When do I get XP for a photo?", "Photo proofs are checked by an admin. Your XP is added as soon as the proof is approved."],
+    ["My proof was rejected. Why?", "We email you the reason. Usually the photo didn't clearly show the activity. You can try again with a clear, original photo of you doing the activity."],
+    ["What makes a good proof photo?", "A clear, original photo taken by you that shows the activity actually happening. Photos copied from the internet or reused from earlier submissions are rejected."],
+    ["What is an event code?", "At campus events and drives, the organisers share a code. Enter it on the event's activity to collect your XP."],
+    ["What are levels?", "Your total XP decides your level: Eco Starter (0), Green Rookie (100), Green Warrior (300), Eco Champion (600), Planet Hero (1000) and Eco Legend (2000+)."],
+    ["What is \"XP to spend\"?", "XP you can use on rewards when they are offered. Spending XP never lowers your rank or the XP that counts for your certificate."],
+    ["Are GreenXP points carbon credits or money?", "No. GreenXP points are reward points only. They are not carbon credits and have no cash value."],
+  ]],
+  ["Carbon footprint", [
+    ["How is my footprint calculated?", "We start with an estimate from your 15 questionnaire answers. As you log real travel, bills and meals, each entry is multiplied by a typical Indian emission factor. It is a rough guide to where your biggest impact is, not a certified measurement."],
+    ["How do I log my travel, bills or meals?", "Open <b>Footprint</b> and click <b>+ Log activity</b>. Choose a category, enter the details and, for bills, you can upload a photo or PDF of the bill."],
+    ["Can I delete a wrong entry?", "Yes. In <b>Footprint</b>, under Your entries, click ✕ next to the entry."],
+  ]],
+  ["Leaderboard", [
+    ["How does the leaderboard work?", "You are ranked against students of your own institution by the total XP you've earned from approved activities. The top 50 are shown."],
+    ["What do others see about me?", "Your name, department and XP on the leaderboard. Your mobile number is never shown publicly."],
+  ]],
+  ["Certificates", [
+    ["Who gets a certificate?", "Students with <b>400 or more verified XP</b> in an academic year. Certificates are issued once a year, at the end of the academic year."],
+    ["What do the stars mean?", "Stars rate your year's XP: ★ 400–599, ★★ 600–799, ★★★ 800–999, ★★★★ 1000–1199, ★★★★★ 1200+."],
+    ["What is printed on my certificate?", "Your name, USN, registration ID, year of study, institution with city, state and pincode, the year of achievement, your verified XP, your star rating and the activities you completed."],
+    ["How do I download or share it?", "Open <b>Certificate</b>, click <b>View and print certificate</b>, then <b>Print / save as PDF</b>. From there you can also post it on LinkedIn or add it to your LinkedIn profile."],
+    ["How can someone check my certificate is genuine?", "Anyone can enter the certificate ID under <b>Verify a certificate</b>, or open the link in your LinkedIn post, to see that it is genuine."],
+    ["I've earned certificates in earlier years. Where are they?", "All your certificates stay in <b>Certificate</b>, newest year first."],
+  ]],
+  ["Institutions and partners", [
+    ["How can our college or company work with GreenXP?", "Contact us at " + "<a href=\"mailto:greenxpglobal@gmail.com\">greenxpglobal@gmail.com</a>" + ". Institutions get an admin portal to review proofs, run event codes and issue certificates, and partners can sponsor rewards."],
+    ["My account has been blocked. What can I do?", "We email you the reason. If you think it's a mistake, contact us and we'll look into it."],
+    ["How do I contact the GreenXP team?", "Use the <b>Help</b> menu to send us a question, or email <a href=\"mailto:greenxpglobal@gmail.com\">greenxpglobal@gmail.com</a>. We reply by email."],
+  ]],
+];
+function faq(topic = "All") {
+  const signedIn = !$("tabs").hidden;
+  const topics = ["All", ...FAQ.map(g => g[0])];
+  $("app").innerHTML = `${signedIn ? "" : `<p><button class="s o" onclick="authScreen()">Back to log in</button></p>`}
+  <h2>Frequently asked questions</h2><p class="slogan">Every green action counts. Here's how it all works.</p>
+  <input id="fq" type="search" placeholder="Search questions, e.g. payment, certificate, XP" oninput="faqFilter()" class="form">
+  <div class="faqtopics">${topics.map(t => `<button class="s ${t === topic ? "" : "o"}" onclick="faq('${t}')">${t}</button>`).join("")}</div>
+  <div id="faqlist" class="faqlist">${FAQ.filter(g => topic === "All" || g[0] === topic).map(([g, qs]) => `<section><h3>${g}</h3>` +
+    qs.map(([q, a]) => `<details class="card faq"><summary>${q}</summary><p>${a}</p></details>`).join("") + `</section>`).join("")}</div>
+  <p id="faqnone" class="mute" hidden>No questions match. Try another word, or ask us from the Help menu.</p>
+  <div class="card form" style="margin-top:1rem"><b>Still have a question?</b><p class="mute" style="margin:.3rem 0 .6rem">We reply by email, usually within a day or two.</p>
+    <button class="s" onclick="${signedIn ? "show('help')" : "help('faq')"}">Ask us</button></div>`;
+}
+function faqFilter() {
+  const w = $("fq").value.trim().toLowerCase();
+  let shown = 0;
+  document.querySelectorAll("#faqlist section").forEach(sec => {
+    let any = 0;
+    sec.querySelectorAll("details").forEach(d => { const hit = !w || d.textContent.toLowerCase().includes(w); d.hidden = !hit; d.open = !!w && hit; any += hit; });
+    sec.hidden = !any; shown += any;
+  });
+  $("faqnone").hidden = shown > 0;
 }
 // Certificates: one per academic year, at year end, for 400+ verified XP. Stars rate the year's XP.
 const CERT_MIN_XP = 400, STAR_STEPS = [400, 600, 800, 1000, 1200];
