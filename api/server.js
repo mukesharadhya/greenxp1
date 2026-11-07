@@ -236,27 +236,34 @@ app.get("/api/fee", auth, wrap(async (req, res) => {
     [req.profile.college_id, y.id]) : null);
 }));
 
-// Leaderboards by total XP earned (spending XP never lowers it): ?scope=campus (the student's institution), city or
-// state (institutions in the same city or state). Top 50, plus the student's own rank wherever it is.
+// Leaderboards by total XP earned (spending XP never lowers it): campus (the student's institution), city and state
+// (institutions in the same city or state). ?scope= picks the board whose top 10 is returned; the student's own rank
+// is returned for all three boards.
 app.get("/api/leaderboard", auth, paid, wrap(async (req, res) => {
   const scope = ["campus", "city", "state"].includes(req.query.scope) ? req.query.scope : "campus";
   const c = await one("select name, city, state from public.colleges where id = $1", [req.profile.college_id]);
-  const label = c && { campus: c.name, city: c.city, state: c.state }[scope];
-  if (!label) return res.json({ scope, label: null, rows: [], me: null });
-  const rows = await q(`with x as (select user_id, coalesce(sum(amount) filter (where source <> 'redemption'), 0)::int xp
+  const labels = { campus: c?.name || null, city: c?.city || null, state: c?.state || null };
+  const rows = c ? await q(`with x as (select user_id, coalesce(sum(amount) filter (where source <> 'redemption'), 0)::int xp
         from public.xp_transactions group by user_id),
-      ranked as (select rank() over (order by x.xp desc)::int rank, p.id, coalesce(p.username, p.full_name) display_name,
-          p.department, c.name college, x.xp, count(*) over ()::int total
-        from x join public.profiles p on p.id = x.user_id join public.colleges c on c.id = p.college_id
+      scopes as (select unnest(array['campus', 'city', 'state']) scope),
+      ranked as (select s.scope, rank() over (partition by s.scope order by x.xp desc)::int rank, p.id, coalesce(p.username, p.full_name) display_name,
+          p.department, c.name college, x.xp, count(*) over (partition by s.scope)::int total
+        from scopes s cross join x join public.profiles p on p.id = x.user_id join public.colleges c on c.id = p.college_id
         where p.role = 'student' and p.leaderboard_visibility and p.account_status <> 'suspended' and p.approval_status <> 'rejected'
-          and x.xp > 0 and case $2 when 'campus' then p.college_id = $3
-            when 'city' then lower(trim(c.city)) = lower(trim($4)) and lower(trim(c.state)) = lower(trim(coalesce($5, c.state)))
-            else lower(trim(c.state)) = lower(trim($5)) end)
-    select rank, display_name, department, college, xp, total, id = $1 as is_me from ranked
-    where rank <= 50 or id = $1 order by rank, display_name limit 51`, [req.profile.id, scope, req.profile.college_id, c.city, c.state]);
-  const me = rows.find((r) => r.is_me) || null;
-  res.json({ scope, label, total: rows[0]?.total || 0, me: me && { rank: me.rank, xp: me.xp },
-    rows: rows.filter((r) => r.rank <= 50).map(({ total, ...r }) => r) });
+          and x.xp > 0 and case s.scope when 'campus' then p.college_id = $2
+            when 'city' then lower(trim(c.city)) = lower(trim($3)) and lower(trim(c.state)) = lower(trim(coalesce($4, c.state)))
+            else lower(trim(c.state)) = lower(trim($4)) end)
+    select scope, rank, display_name, department, college, xp, total, id = $1 as is_me from ranked
+    where (scope = $5 and rank <= 10) or id = $1 order by scope, rank, display_name`,
+    [req.profile.id, req.profile.college_id, c.city, c.state, scope]) : [];
+  const standing = Object.fromEntries(Object.keys(labels).map((k) => {
+    const m = rows.find((r) => r.scope === k && r.is_me);
+    return [k, { label: labels[k], rank: m?.rank || null, total: m?.total || null, xp: m?.xp || 0 }];
+  }));
+  const strip = ({ scope: _s, total: _t, ...r }) => r;
+  const board = rows.filter((r) => r.scope === scope);
+  const me = board.find((r) => r.is_me);
+  res.json({ scope, label: labels[scope], standing, rows: board.filter((r) => r.rank <= 10).map(strip), me: me && me.rank > 10 ? strip(me) : null });
 }));
 
 // Footprint logs: the last year of entries; students add and delete their own.

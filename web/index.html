@@ -155,10 +155,10 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 .lbtabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem;margin:.2rem 0 .8rem}
 .lbtabs button{display:flex;flex-direction:column;align-items:flex-start;gap:.15rem;text-align:left;background:var(--card);color:var(--ink);border:2px solid var(--line);border-radius:14px;padding:.7rem .9rem;min-width:0}
 .lbtabs button span{font:600 .78rem system-ui;color:var(--mute);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lbtabs button em{font:800 1.35rem/1.1 "Bricolage Grotesque",system-ui,sans-serif;font-style:normal;color:#e9a23b;margin-top:.25rem}.lbtabs button em small{font:600 .75rem system-ui;color:var(--mute)}
+.lbgap{text-align:center;color:var(--mute);font-size:1.4rem;line-height:1;margin:.1rem 0 .5rem}
 .lbtabs button b{font:800 1.05rem "Bricolage Grotesque",system-ui,sans-serif}
 .lbtabs button.on{border-color:#e9a23b;background:linear-gradient(150deg,color-mix(in srgb,#e9a23b 18%,var(--card)),var(--card) 70%);box-shadow:0 6px 18px #e9a23b33}
-.lbme{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap}
-.lbme-rank{text-align:right;margin-left:auto}.lbme-rank b{display:block;font:800 2rem/1 "Bricolage Grotesque",system-ui,sans-serif;color:#e9a23b}
 .board .card.me{outline:2px solid #e9a23b;outline-offset:-2px}
 /* ---------- FAQ ---------- */
 .faqtopics{display:flex;flex-wrap:wrap;gap:.4rem;margin:.2rem 0 .6rem}
@@ -1156,32 +1156,37 @@ async function deleteLog(id) {
   try { await api(`/api/footprint-logs/${id}`, null, "DELETE"); fp(); } catch (e) { alert(e.message); }
 }
 
-// Three leaderboards: the student's campus, their city and their state. The chosen one is remembered while the page is open.
-let lbScope = "campus", lbLabels = {};
+// Three leaderboards: the student's campus, their city and their state. Each tab shows where the student stands on it;
+// the chosen board lists its top 10, plus the student's own row if they are further down.
+let lbScope = "campus", lbStanding = null;
 const LB = { campus: ["Campus", "Your campus"], city: ["City", "Your city"], state: ["State", "Your state"] };
+const lbTabs = scope => Object.entries(LB).map(([k, [t, sub]]) => {
+  const st = lbStanding?.[k];
+  const pos = !lbStanding ? "…" : !st?.label ? "Not available" : st.rank ? `#${st.rank} <small>of ${st.total}</small>` : "No rank yet";
+  return `<button role="tab" aria-selected="${k === scope}" class="${k === scope ? "on" : ""}" onclick="ranks('${k}')"><b>${t}</b><span>${esc(st?.label || sub)}</span><em>${pos}</em></button>`;
+}).join("");
 async function ranks(scope = lbScope) {
   if (!member && me.role === "student") return locked("Leaderboard", "Your rank says what you did for the planet.", "See where you stand on your campus, in your city and across your state, and climb the ranks with every verified activity.");
   lbScope = scope;
   $("app").innerHTML = `<h2>Leaderboard</h2><p class="slogan">Your rank says what you did for the planet.</p>
-  <div class="lbtabs" role="tablist">${Object.entries(LB).map(([k, [t, sub]]) => `<button role="tab" aria-selected="${k === scope}" class="${k === scope ? "on" : ""}" onclick="ranks('${k}')"><b>${t}</b><span id="lbl_${k}">${esc(lbLabels[k] || sub)}</span></button>`).join("")}</div>
+  <p class="mute" style="margin:-.3rem 0 .5rem">Where you stand</p><div class="lbtabs" role="tablist" id="lbtabs">${lbTabs(scope)}</div>
   <div id="lbbody"><p class="mute">Loading…</p></div>
   <div class="card board-goal"><h3 style="margin-top:0">How the leaderboards work</h3><div class="goal">
     <div><b>Three leagues</b><span class="mute">Compare yourself with students of your own campus, of every institution in your city, and across your state.</span></div>
     <div><b>Verified XP only</b><span class="mute">Your rank is the total XP you have earned from approved green activities. Spending XP on rewards never lowers it.</span></div>
-    <div><b>Climb the ranks</b><span class="mute">The top 50 of each league are shown, and you always see your own rank. Complete more activities to move up.</span></div>
+    <div><b>Climb the ranks</b><span class="mute">The top 10 of each league are shown, and you always see your own rank. Complete more activities to move up.</span></div>
   </div><p style="margin:.9rem 0 0"><button class="s" onclick="show(&#39;earn&#39;)">Earn XP now</button></p></div>`;
   const d = await api(`/api/leaderboard?scope=${scope}`, null, "GET").catch(e => ({ error: e.message }));
   if (tab !== "ranks" || lbScope !== scope) return; // moved on while this loaded
   const body = $("lbbody");
   if (d.error) { body.innerHTML = `<p class="err">${esc(d.error)}</p>`; return; }
+  lbStanding = d.standing; $("lbtabs").innerHTML = lbTabs(scope);
   if (!d.label) { body.innerHTML = `<div class="card"><p class="mute" style="margin:0">Your institution's ${scope} isn't recorded yet, so this leaderboard isn't available. Please contact us to add it.</p></div>`; return; }
-  $("lbl_" + scope).textContent = lbLabels[scope] = d.label;
   const wide = scope !== "campus";
   const row = r => `<div class="card row${r.rank <= 3 ? " top" : ""}${r.is_me ? " me" : ""}"><span class="medal">${["🥇", "🥈", "🥉"][r.rank - 1] || `<b>${r.rank}</b>`}</span>
     <span style="flex:1;margin-left:.6rem;min-width:0">${esc(r.display_name)}${r.is_me ? ` <span class="pill">You</span>` : ""}<br><span class="mute">${esc([r.department, wide ? r.college : ""].filter(Boolean).join(" · "))}</span></span><b>${r.xp} XP</b></div>`;
-  body.innerHTML = `<div class="card lbme"><div><span class="mute">${LB[scope][1]}</span><h3 style="margin:.1rem 0 0">${esc(d.label)}</h3></div>
-      <div class="lbme-rank">${d.me ? `<b>#${d.me.rank}</b><span class="mute">of ${d.total} · ${d.me.xp} XP</span>` : `<span class="mute">Earn your first verified XP to get a rank here.</span>`}</div></div>
-    <div class="board">${d.rows.map(row).join("") || `<p class="mute">No XP earned yet. Be the first.</p>`}</div>`;
+  body.innerHTML = `<h3 style="margin:.4rem 0 .6rem">Top 10 · ${esc(d.label)}</h3><div class="board">${d.rows.map(row).join("") || `<p class="mute">No XP earned yet. Be the first.</p>`}
+    ${d.me ? `<div class="lbgap" aria-hidden="true">⋯</div>${row(d.me)}` : ""}</div>`;
 }
 // Frequently asked questions: a menu tab for signed-in users, and a link on the log-in page for everyone else.
 const FAQ = [
@@ -1220,7 +1225,7 @@ const FAQ = [
     ["Can I delete a wrong entry?", "Yes. In <b>Footprint</b>, under Your entries, click ✕ next to the entry."],
   ]],
   ["Leaderboard", [
-    ["How do the leaderboards work?", "There are three: your campus, your city (every institution in your city) and your state. You are ranked by the total XP you've earned from approved activities. The top 50 of each are shown, and you always see your own rank."],
+    ["How do the leaderboards work?", "There are three: your campus, your city (every institution in your city) and your state. You are ranked by the total XP you've earned from approved activities. The top 10 of each are shown, and you always see your own rank on all three."],
     ["What do others see about me?", "Your name, department, institution and XP on the leaderboards. Your mobile number is never shown publicly."],
   ]],
   ["Certificates", [
