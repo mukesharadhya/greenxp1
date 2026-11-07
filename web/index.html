@@ -180,10 +180,6 @@ body{overflow-x:clip}
 .l-side{position:relative}
 .landing .l-card{background:var(--h-glass);-webkit-backdrop-filter:blur(18px) saturate(160%);backdrop-filter:blur(18px) saturate(160%);border:1px solid #ffffff80;border-radius:22px;padding:1.3rem;margin:0;box-shadow:inset 0 1px 0 #ffffffb0,0 24px 60px #0634272e}
 .l-card h3{font:700 1.4rem "Bricolage Grotesque",system-ui,sans-serif;margin:0 0 .2rem}
-.l-chip{position:absolute;z-index:2;display:flex;align-items:center;gap:8px;background:var(--h-glass);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:1px solid #ffffff80;border-radius:14px;padding:8px 12px;font-size:.85rem;font-weight:600;box-shadow:0 10px 28px #0634272a;animation:l-float 5s ease-in-out infinite;white-space:nowrap}
-.l-chip .pill{font-size:.78rem}
-.l-chip.c1{top:-30px;left:-40px}.l-chip.c2{bottom:-26px;left:-56px;animation-delay:-1.6s}.l-chip.c3{top:-30px;right:-24px;animation-delay:-3.2s}
-@keyframes l-float{50%{transform:translateY(-10px)}}
 .l-stats{position:relative;z-index:1;width:min(1180px,100% - 32px);margin:0 auto 18px;display:flex;flex-wrap:wrap;border-top:1px solid var(--h-line);border-bottom:1px solid var(--h-line)}
 .l-stat{flex:1 1 150px;padding:16px 18px;border-right:1px solid var(--h-line)}.l-stat:last-child{border-right:0}
 .l-stat b{display:block;font:700 clamp(1.7rem,3vw,2.5rem)/1.1 "Bricolage Grotesque",system-ui,sans-serif;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
@@ -199,7 +195,7 @@ body{overflow-x:clip}
 @keyframes l-sway{from{transform:rotate(-2deg)}to{transform:rotate(2deg)}}
 .l-blade{animation:l-spin 6s linear infinite}@keyframes l-spin{to{transform:rotate(360deg)}}
 .l-foot{position:relative;z-index:1;text-align:center;font-size:.85rem;color:var(--h-ink2);padding:10px 16px 18px;background:color-mix(in srgb,#2f8f5b 22%,var(--h-bg))}
-@media(max-width:860px){.l-in{grid-template-columns:minmax(0,1fr)}.l-chip{display:none}.l-sun{width:200px;height:200px}.l-stat{flex-basis:45%}.l-stat:nth-child(2n){border-right:0}}
+@media(max-width:860px){.l-in{grid-template-columns:minmax(0,1fr)}.l-sun{width:200px;height:200px}.l-stat{flex-basis:45%}.l-stat:nth-child(2n){border-right:0}}
 @media(prefers-reduced-motion:reduce){.landing *{animation:none!important}}
 </style></head>
 <body><div class="app" id="app">Loading…</div><nav class="tabs" id="tabs" hidden></nav>
@@ -309,9 +305,6 @@ async function authScreen() {
     <div class="l-cta"><button class="btn btn-p" onclick="heroGo('signup')">Start your green streak</button><button class="btn btn-g" onclick="heroGo('login')">I already have an account</button></div>
   </div>
   <div class="l-side">
-    <div class="l-chip c1">🚲 Cycled to college <span class="pill">+15 XP</span></div>
-    <div class="l-chip c2">🌳 Planted a tree <span class="pill">+50 XP</span></div>
-    <div class="l-chip c3">🏆 Rank #3 this week</div>
   <div class="card l-card" id="authcard"><h3><img src="favicon.png" alt="" style="height:1.4em;vertical-align:-.35em;margin-right:.35rem">Join the green league</h3><p class="mute" style="margin-top:0">Talk is cheap. Proof earns XP.</p>
   <div class="row" style="justify-content:flex-start;margin-bottom:.8rem"><button id="m_login" onclick="authMode('login')">Log in</button><button id="m_signup" class="o" onclick="authMode('signup')">Sign up</button></div>
   <div id="su" hidden>
