@@ -124,7 +124,8 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 }
 /* ---------- Logo ---------- */
 .tabs:before{display:none!important}
-.brand{display:none;cursor:pointer;margin-right:auto;align-items:center}.brand img{height:38px;width:auto;display:block}
+.brand{display:flex;cursor:pointer;margin-right:auto;align-items:center;flex-shrink:0}.brand img{height:38px;width:auto;display:block}.brand .bs{display:none}
+@media(max-width:899px){.brand{margin-right:.2rem;padding:0 .3rem}.brand .bl{display:none}.brand .bs{display:block;height:30px}}
 @media(min-width:900px){.brand{display:flex}}
 .brandh{display:flex;align-items:center;gap:.6rem}.brandh img{height:1.6em;width:auto}
 .l-logo{display:block;width:clamp(120px,min(15vw,19vh),210px);height:auto;margin:0 0 10px;filter:drop-shadow(0 12px 24px #06342733)}
@@ -160,6 +161,26 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 .lbtabs button b{font:800 1.05rem "Bricolage Grotesque",system-ui,sans-serif}
 .lbtabs button.on{border-color:#e9a23b;background:linear-gradient(150deg,color-mix(in srgb,#e9a23b 18%,var(--card)),var(--card) 70%);box-shadow:0 6px 18px #e9a23b33}
 .board .card.me{outline:2px solid #e9a23b;outline-offset:-2px}
+/* ---------- About ---------- */
+.ab-hero{position:relative;text-align:center;padding:1.6rem 1rem 1.2rem;margin-bottom:1rem;border-radius:22px;background:radial-gradient(70% 90% at 50% 0%,color-mix(in srgb,#4cc9a0 25%,transparent),transparent 70%)}
+.ab-logo{display:block;margin:0 auto;width:clamp(110px,14vw,160px);height:auto;filter:drop-shadow(0 10px 22px #06342733)}
+.ab-k{display:inline-block;letter-spacing:.18em;text-transform:uppercase;font-size:.72rem;font-weight:800;color:var(--prid);margin:.4rem 0 .3rem}
+.ab-hero h2{font:800 clamp(1.8rem,4.4vw,3rem)/1.08 "Bricolage Grotesque",system-ui,sans-serif;letter-spacing:-.02em;margin:.2rem 0 .7rem}.ab-hero h2 em{font-style:normal;color:#e9a23b}
+.ab-hero p{max-width:60ch;margin:0 auto;color:var(--mute);font-size:1.05rem}
+.ab-sec{display:grid;grid-template-columns:auto 1fr;gap:1rem 1.2rem;background:var(--card);border:2px solid var(--line);border-radius:20px;padding:1.3rem 1.4rem;margin-bottom:1rem}
+.ab-n{font:800 2.4rem/1 "Bricolage Grotesque",system-ui,sans-serif;color:#e9a23b;min-width:3.2rem}
+.ab-sec h3{font:800 clamp(1.3rem,2.4vw,1.75rem)/1.15 "Bricolage Grotesque",system-ui,sans-serif;margin:0 0 .6rem}
+.ab-sec p{line-height:1.6;margin:.4rem 0 .8rem}
+.ab-pts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.7rem;margin:.6rem 0 .8rem}
+.ab-pts div{border-left:3px solid #e9a23b;padding:.2rem 0 .2rem .8rem}.ab-pts b{display:block;margin-bottom:.15rem}.ab-pts span{color:var(--mute);font-size:.93rem;line-height:1.5}
+.ab-quote{font:600 1.08rem/1.5 "Bricolage Grotesque",system-ui,sans-serif;color:var(--prid);border-left:4px solid var(--pri);padding:.2rem 0 .2rem .9rem}
+.ab-out{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:.8rem}
+.ab-out>div{border:2px solid var(--line);border-radius:16px;padding:.9rem 1rem;background:color-mix(in srgb,var(--line) 25%,transparent)}
+.ab-out b{font:800 1.05rem "Bricolage Grotesque",system-ui,sans-serif;color:#e9a23b}.ab-out ul{margin:.4rem 0 0;padding-left:1.1rem;color:var(--mute);line-height:1.55;font-size:.93rem}
+.ab-cta{text-align:center;padding:1.6rem 1rem;border-radius:20px;background:linear-gradient(135deg,#0f3a31,#0a2722);color:#eafaf3}
+.ab-cta h3{font:800 clamp(1.3rem,3vw,1.9rem)/1.2 "Bricolage Grotesque",system-ui,sans-serif;margin:0 0 .4rem}.ab-cta p{color:#a7cfc3;margin:0 0 1rem}
+.ab-cta button{background:#e9a23b;color:#071d18;border-bottom-color:#b97a1f;padding:.8rem 1.4rem}
+@media(max-width:600px){.ab-sec{grid-template-columns:1fr;padding:1.1rem}.ab-n{font-size:1.9rem}}
 /* ---------- FAQ ---------- */
 .faqtopics{display:flex;flex-wrap:wrap;gap:.4rem;margin:.2rem 0 .6rem}
 .faq{padding:0;margin-bottom:.5rem}.faq summary{cursor:pointer;list-style:none;padding:.85rem 2.6rem .85rem 1rem;font-weight:700;position:relative}
@@ -348,7 +369,7 @@ async function authScreen() {
   <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password">
   <p class="row" style="flex-wrap:wrap"><button id="go" onclick="login()">Log in</button>
     <a href="#" id="forgot" onclick="forgotPassword();return false" style="color:var(--prid);font-weight:700">Forgot password?</a></p><p id="msg"></p>
-  <p><a href="#" onclick="faq();return false" style="color:var(--prid);font-weight:700">❓ Read the FAQ</a> &nbsp;·&nbsp; <a href="#" onclick="help('authScreen');return false" style="color:var(--prid);font-weight:700">✉️ Contact us</a></p></div></div></div>
+  <p><a href="#" onclick="about();return false" style="color:var(--prid);font-weight:700">🌍 About</a> &nbsp;·&nbsp; <a href="#" onclick="faq();return false" style="color:var(--prid);font-weight:700">❓ Read the FAQ</a> &nbsp;·&nbsp; <a href="#" onclick="help('authScreen');return false" style="color:var(--prid);font-weight:700">✉️ Contact us</a></p></div></div></div>
   <div class="l-stats" id="counters"></div>
   <div class="l-marq" aria-hidden="true"><div>${[0, 1].map(() => ["Talk is cheap. Proof earns XP.", "Small habits. Big planet.", "Save the planet, one XP at a time.", "Your rank says what you did for the planet.", "Little green steps add up to a big green change.", "A certificate that proves you made a difference."].map(t => `<span>${t}</span>`).join("")).join("")}</div></div>
   ${heroLand()}
@@ -819,10 +840,10 @@ async function sendPayment() {
 function show(t) {
   tab = t;
   const T = ["admin","super_admin"].includes(me.role) ? [["admin","Admin"],["ranks","Leaderboard"],["faq","FAQ"],["help","Contact"]]
-    : [["home","Home"],["earn","Earn XP"],["fp","Footprint"],["ranks","Leaderboard"],["cert","Certificate"],["faq","FAQ"],["help","Contact"]];
-  $("tabs").innerHTML = `<span class="brand" onclick="show('${T[0][0]}')"><img src="logo-full.png" alt="GreenXP"></span>` + T.map(x => `<button class="${x[0]==t?"on":""}" onclick="show('${x[0]}')">${x[1]}</button>`).join("") + `<button class="out" onclick="logout()">Log out</button>`;
+    : [["about","About"],["earn","Earn XP"],["fp","Footprint"],["ranks","Leaderboard"],["cert","Certificate"],["faq","FAQ"],["help","Contact"]];
+  $("tabs").innerHTML = `<span class="brand" role="link" tabindex="0" title="Home" onclick="show('${["admin", "super_admin"].includes(me.role) ? "admin" : "home"}')"><img class="bl" src="logo-full.png" alt="GreenXP home"><img class="bs" src="favicon.png" alt="GreenXP home"></span>` + T.map(x => `<button class="${x[0]==t?"on":""}" onclick="show('${x[0]}')">${x[1]}</button>`).join("") + `<button class="out" onclick="logout()">Log out</button>`;
   $("app").classList.toggle("wide", ["admin", "earn"].includes(t));
-  ({ home, earn, fp, ranks: () => ranks(), cert, admin, faq: () => faq(), help: () => help(), pay: () => payScreen(payYear) })[t]();
+  ({ home, earn, fp, ranks: () => ranks(), cert, admin, faq: () => faq(), about: () => about(), help: () => help(), pay: () => payScreen(payYear) })[t]();
 }
 const SLOGANS = ["Save the planet, one XP at a time.", "Small habits. Big planet.", "Every green action counts. Now it scores too.", "Little green steps add up to a big green change.", "Go green. Level up."];
 // Home's streak card: the current run of green days, the last 7 days, and what to do next.
@@ -1187,6 +1208,53 @@ async function ranks(scope = lbScope) {
     <span style="flex:1;margin-left:.6rem;min-width:0">${esc(r.display_name)}${r.is_me ? ` <span class="pill">You</span>` : ""}<br><span class="mute">${esc([r.department, wide ? r.college : ""].filter(Boolean).join(" · "))}</span></span><b>${r.xp} XP</b></div>`;
   body.innerHTML = `<h3 style="margin:.4rem 0 .6rem">Top 10 · ${esc(d.label)}</h3><div class="board">${d.rows.map(row).join("") || `<p class="mute">No XP earned yet. Be the first.</p>`}
     ${d.me ? `<div class="lbgap" aria-hidden="true">⋯</div>${row(d.me)}` : ""}</div>`;
+}
+// About GreenXP: why it exists and what it changes. A menu tab for signed-in users, and a link on the log-in page.
+function about() {
+  const signedIn = !$("tabs").hidden;
+  const sec = (n, kicker, title, body) => `<section class="ab-sec"><div class="ab-n">${n}</div><div><span class="ab-k">${kicker}</span><h3>${title}</h3>${body}</div></section>`;
+  const pts = items => `<div class="ab-pts">${items.map(([b, t]) => `<div><b>${b}</b><span>${t}</span></div>`).join("")}</div>`;
+  $("app").innerHTML = `${signedIn ? "" : `<p><button class="s o" onclick="authScreen()">Back to log in</button></p>`}
+  <div class="ab-hero"><img src="logo-mark.png" alt="" class="ab-logo">
+    <span class="ab-k">About GreenXP</span>
+    <h2>Small green actions.<br><em>Real, recognised impact.</em></h2>
+    <p>GreenXP turns the everyday things students do for the planet into progress they can see, share and be proud of.</p></div>
+
+  ${sec("01", "The problem statement", "Good intentions, invisible impact", `
+    <p>Most students care about climate change. Ask them, and they will tell you they want to help. But caring rarely turns into action, and action rarely gets noticed.</p>
+    ${pts([["No simple starting point", "\"Save the planet\" feels too big. Students don't know which everyday actions matter or where to begin."],
+           ["No way to measure", "Without a number, it's impossible to know whether your choices are making any difference."],
+           ["No recognition", "Cycling to college, planting a tree or cutting waste goes unseen. Unseen effort fades away."],
+           ["No proof that counts", "Saying \"I'm passionate about sustainability\" on a CV is easy. Showing verified proof is not."]])}
+    <p class="ab-quote">The result: a generation that wants to act, held back by a system that never rewards them for it.</p>`)}
+
+  ${sec("02", "Introduction", "Meet GreenXP", `
+    <p>GreenXP is a sustainability platform built for students and campuses. It works like a game you already know how to play: do something good, earn points, level up.</p>
+    ${pts([["Act green", "Choose from real activities set by your institution: travel, energy, water, waste, food and community."],
+           ["Upload proof", "Share a photo or an event code. Admins verify it, so every point is earned honestly."],
+           ["Earn XP and level up", "Grow from Eco Starter to Eco Legend, keep your green streak alive and climb your campus, city and state leaderboards."],
+           ["Get certified", "Reach 400 verified XP in a year to earn a star-rated certificate anyone can verify, ready for LinkedIn."]])}
+    <p>Along the way, your personal carbon footprint dashboard shows where your biggest impact is, so every step is a smart one.</p>`)}
+
+  ${sec("03", "The cause", "Why this matters now", `
+    <p>Climate change isn't only decided in boardrooms and parliaments. It is shaped by billions of everyday choices: how we travel, what we eat, the power we use and what we throw away.</p>
+    ${pts([["Habits start young", "The years at college are when lifelong habits form. A habit built here can last a lifetime."],
+           ["Campuses multiply impact", "One student's action is small. Thousands of students acting together on one campus become a movement."],
+           ["Young people lead", "Students are the next engineers, doctors, founders and leaders. What they practise today, they will build tomorrow."],
+           ["Proof builds trust", "Verified action, not slogans, is what the world needs and what employers increasingly look for."]])}
+    <p class="ab-quote">We can't ask a generation to save the planet without giving them a way to start, today, on their own campus.</p>`)}
+
+  ${sec("04", "Outcome", "What changes with GreenXP", `
+    <div class="ab-out">
+      <div><b>For students</b><ul><li>Green habits that stick, powered by streaks and levels</li><li>Recognition on leaderboards among friends and peers</li><li>A verifiable certificate that strengthens your CV and LinkedIn</li><li>A clear view of your own carbon footprint</li></ul></div>
+      <div><b>For institutions</b><ul><li>Measurable student participation in sustainability</li><li>Verified activity records instead of guesswork</li><li>A visible green culture that sets the campus apart</li><li>Simple tools to run drives, events and certificates</li></ul></div>
+      <div><b>For partners</b><ul><li>A meaningful way to engage the next generation</li><li>CSR and ESG engagement backed by real, verified action</li><li>Rewards that encourage students to keep going</li></ul></div>
+      <div><b>For the planet</b><ul><li>Thousands of small actions adding up, every single day</li><li>Lower footprints, one habit at a time</li><li>A generation that leads by example</li></ul></div>
+    </div>`)}
+
+  <div class="ab-cta"><h3>Every green action counts. Now it scores too.</h3><p>Join the students who are proving that small habits change a big planet.</p>
+    ${signedIn ? `<button onclick="show('earn')">Start your green streak</button>` : `<button onclick="authScreen().then(()=>heroGo('signup'))">Join GreenXP</button>`}</div>
+  <p class="mute" style="font-size:.8rem;margin-top:1rem">GreenXP points are reward points, not carbon credits or money. Footprint figures are estimates to guide your choices.</p>`;
 }
 // Frequently asked questions: a menu tab for signed-in users, and a link on the log-in page for everyone else.
 const FAQ = [
