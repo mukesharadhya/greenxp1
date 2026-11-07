@@ -67,7 +67,7 @@ both optional, when registering or from Edit profile on Home.
 
 ## Certificates
 
-Students need at least 400 XP for the academic year, and get at most one certificate per academic year. Stars (1 to 5) are shown for 400, 600, 800, 1000 and 1200+ XP. Admin portal has a Certificate template card for a background image and signature
+Students need at least 200 XP for the academic year, and get at most one certificate per academic year. Stars: 1 for 200-299 XP, 2 for 300-399, 3 for 400-499, 4 for 500-699, 5 for 700+; 1000+ XP is awarded "With Distinction" (Green Champion). Standard tiers: Participation 200, Achievement 400, Excellence 700, Distinction 1000 XP. Admin portal has a Certificate template card for a background image and signature
 (S3 `certificates/`) and the signatory's name and title. A college without its own uses the super admin's. The site draws each
 certificate from the student's record and prints it to PDF from the browser; the signature is an image, not a cryptographic one.
 
