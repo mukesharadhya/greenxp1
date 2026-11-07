@@ -59,7 +59,9 @@ tbody tr:hover:not(.editrow) .fz1,tbody tr:hover:not(.editrow) .fz2{background:v
 .certframe{position:absolute;inset:7mm;border:1.2mm double #19b37a}
 .certin{position:absolute;inset:16mm 22mm 14mm;display:flex;flex-direction:column;align-items:center;text-align:center}
 .certin h1{font-size:25pt;margin:0 0 1mm;color:#12312a}.certin .who{font-size:23pt;font-weight:700;margin:1.5mm 0}
-.certin p{margin:.8mm 0;font-size:11.5pt;color:#12312a}
+.certin p{margin:.8mm 0;font-size:11.5pt;color:#12312a}.certstars{font-size:20pt;color:#e9a23b;letter-spacing:2mm;line-height:1;margin:0 0 1.5mm}
+.stars{color:#e9a23b;letter-spacing:.12em;font-size:1.15rem;white-space:nowrap}.stars-scale{display:grid;gap:.35rem}.stars-scale div{display:flex;justify-content:space-between;gap:1rem}
+.certcard{border:2px solid color-mix(in srgb,#e9a23b 55%,var(--line));background:linear-gradient(160deg,color-mix(in srgb,#e9a23b 8%,var(--card)),var(--card) 60%)}
 .certacts{width:100%;margin:2.5mm 0;columns:2;column-gap:10mm;font-size:9pt;text-align:left;flex:1;min-height:0;overflow:hidden}
 .certacts.many{columns:3;font-size:7.5pt}.certacts div{display:flex;justify-content:space-between;gap:3mm;break-inside:avoid;border-bottom:.2mm solid #cfe3da;padding:.5mm 0}
 .certfoot{width:100%;display:flex;justify-content:space-between;align-items:flex-end;font-size:9.5pt;text-align:left}
@@ -1026,22 +1028,42 @@ async function ranks() {
     <div><b>Climb the ranks</b><span class="mute">The top 50 are shown here. Complete more activities to move up and earn your certificate.</span></div>
   </div><p style="margin:.9rem 0 0"><button class="s" onclick="show(&#39;earn&#39;)">Earn XP now</button></p></div>` + `<div class="board">` + ((data||[]).map(r => `<div class="card row${r.rank <= 3 ? " top" : ""}"><span class="medal">${["🥇", "🥈", "🥉"][r.rank - 1] || `<b>${r.rank}</b>`}</span><span style="flex:1;margin-left:.6rem">${esc(r.display_name)}<br><span class="mute">${esc(r.department)}</span></span><b>${r.xp} XP</b></div>`).join("") || `<p class="mute">No XP earned yet. Be the first.</p>`) + `</div>`;
 }
+// Certificates: one per academic year, at year end, for 400+ verified XP. Stars rate the year's XP.
+const CERT_MIN_XP = 400, STAR_STEPS = [400, 600, 800, 1000, 1200];
+const certStars = xp => Math.max(1, STAR_STEPS.filter(m => xp >= m).length);
+const starRow = n => "★".repeat(n) + "☆".repeat(5 - n);
+const studyYear = y => y >= 1 && y <= 5 ? ["1st", "2nd", "3rd", "4th", "5th"][y - 1] + " year of study" : "";
 async function cert() {
-  const data = await api("/api/me/certificates", null, "GET").catch(() => []);
-  $("app").innerHTML = `<h2>Annual certificate</h2><p class="slogan">A certificate that proves you made a difference.</p><div class="dash">` + ((data||[]).map(c => `<div class="card" style="text-align:center;border:3px double var(--pri)"><div class="mute">GreenXP</div><h2>Certificate of ${esc(c.tier)}</h2><p>${esc(me.full_name)} · ${esc(me.usn)}</p>
-  <p>${c.xp_earned} verified XP · ${c.activities_count} activities · est. ${c.estimated_co2e} kg CO₂e*</p><b>ID: ${esc(c.certificate_code)}</b><p class="mute" style="font-size:.75rem">*Estimate based on GreenXP's methodology. Points are not carbon credits.</p><button class="s" onclick="certView('${esc(c.id)}')">View and print certificate</button></div>`).join("") || `<p class="mute">Certificates are issued at year end for students with 200+ verified XP.</p>`) +
-  `</div><h3>Verify a certificate</h3><div class="card form"><input id="vc" placeholder="Certificate ID"><button class="s" onclick="verifyCert()">Verify</button><p id="vr"></p></div>`;
+  const [data, xp] = await Promise.all([api("/api/me/certificates", null, "GET").catch(() => []), api("/api/me/xp", null, "GET").catch(() => ({ year_earned: 0 }))]);
+  const yr = +xp.year_earned || 0, left = Math.max(0, CERT_MIN_XP - yr);
+  const scale = STAR_STEPS.map((m, i) => `<div><span class="stars">${starRow(i + 1)}</span><span class="mute">${i < 4 ? `${m}–${STAR_STEPS[i + 1] - 1}` : `${m}+`} XP</span></div>`).join("");
+  const card = c => `<div class="card certcard">
+    <div class="row"><span class="pill">${esc(c.academic_year)}</span><span class="stars" title="${certStars(c.xp_earned)} of 5 stars">${starRow(certStars(c.xp_earned))}</span></div>
+    <h3 style="margin:.6rem 0 .1rem">Certificate of ${esc(c.tier)}</h3>
+    <p class="mute" style="margin:0 0 .5rem">${[studyYear(c.study_year), "Issued " + new Date(c.issued_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })].filter(Boolean).join(" · ")}</p>
+    <div class="row" style="justify-content:flex-start;gap:1.4rem"><span><b style="font-size:1.4rem">${c.xp_earned}</b> <span class="mute">verified XP</span></span><span><b style="font-size:1.4rem">${c.activities_count}</b> <span class="mute">activities</span></span></div>
+    <p class="mute" style="font-size:.8rem;margin:.5rem 0">ID: <b>${esc(c.certificate_code)}</b></p>
+    <button class="s" onclick="certView('${esc(c.id)}')">View and print certificate</button></div>`;
+  $("app").innerHTML = `<h2>Annual certificate</h2><p class="slogan">A certificate that proves you made a difference.</p>
+  <div class="dash"><div class="card"><h3 style="margin-top:0">How it works</h3>
+    <p class="mute" style="margin:.2rem 0 .6rem">Certificates are issued <b>once a year</b>, at the end of the academic year, to students with <b>400+ verified XP</b> that year.</p>
+    <div class="bar" style="margin:.4rem 0"><i style="width:${Math.min(100, Math.round(yr / CERT_MIN_XP * 100))}%"></i></div>
+    <span class="mute">This year: <b>${yr} XP</b>. ${left ? `${left} XP more to qualify.` : "You qualify for this year's certificate."}</span></div>
+  <div class="card"><h3 style="margin-top:0">Star rating</h3><div class="stars-scale">${scale}</div></div></div>
+  <h3>Your certificates</h3>` + ((data || []).length ? `<div class="dash">${data.map(card).join("")}</div>`
+    : `<p class="mute">No certificates yet. Reach 400 verified XP this academic year to earn your first.</p>`) +
+  `<h3>Verify a certificate</h3><div class="card form"><input id="vc" placeholder="Certificate ID"><button class="s" onclick="verifyCert()">Verify</button><p id="vr"></p></div>`;
 }
 // The certificate as printed: one A4 landscape sheet, on the admin's template if there is one.
 function certHtml(d) {
   const t = d.template || {}, date = new Date(d.issued_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
   return `<div class="certwrap"><div id="certdoc" class="cert">
     ${t.background_url ? `<img class="certbg" src="${esc(t.background_url)}" alt="">` : `<div class="certframe"></div>`}
-    <div class="certin"><h1>Certificate of ${esc(d.tier)}</h1><p>This is to certify that</p>
+    <div class="certin"><h1>Certificate of ${esc(d.tier)}</h1><div class="certstars">${starRow(certStars(d.xp_earned))}</div><p>This is to certify that</p>
       <div class="who">${esc(d.student_name)}</div>
-      <p>of <b>${esc(d.institution)}</b>${d.city ? ", " + esc(d.city) : ""}</p>
-      <p>USN: <b>${esc(d.usn)}</b> &nbsp;·&nbsp; GreenXP registration ID: <b>${esc(d.registration_id)}</b></p>
-      <p>has earned <b>${d.xp_earned} verified XP</b> in the academic year ${esc(d.academic_year)} through these activities:</p>
+      <p>USN: <b>${esc(d.usn)}</b> &nbsp;·&nbsp; GreenXP registration ID: <b>${esc(d.registration_id)}</b>${d.study_year ? ` &nbsp;·&nbsp; ${studyYear(d.study_year)}` : ""}</p>
+      <p>of <b>${esc(d.institution)}</b>${[d.city, d.state].filter(Boolean).map(x => ", " + esc(x)).join("")}${d.pincode ? " – " + esc(d.pincode) : ""}</p>
+      <p>has earned <b>${d.xp_earned} verified XP</b> in the year of achievement <b>${esc(d.academic_year)}</b> through these activities:</p>
       <div class="certacts${d.activities.length > 16 ? " many" : ""}">${d.activities.map(a => `<div><span>${esc(a.name)}${a.times > 1 ? ` × ${a.times}` : ""}</span><b>${a.xp} XP</b></div>`).join("")}</div>
       <div class="certfoot"><div>Date of issue: <b>${esc(date)}</b><br>Certificate ID: <b>${esc(d.certificate_code)}</b><br>Verify at greenxp.in</div>
         <div class="certsign">${t.signature_url ? `<img src="${esc(t.signature_url)}" alt="Signature">` : ""}<b>${esc(t.signatory_name || "Authorised signatory")}</b>${esc(t.signatory_title)}</div></div>
@@ -1153,7 +1175,7 @@ async function admin() {
       <span style="flex:2;min-width:200px"><label for="na_per">Per</label><select id="na_per"><option value="day">Day</option><option value="week">Week</option><option value="month" selected>Month</option><option value="total">Whole time (no reset)</option></select></span></div>
     ${me.role === "super_admin" ? checkbox(`id="na_all"`, "Add to all institutions") : ""}
     <p><button onclick="addActivity(this)">Add activity</button></p><p id="namsg"></p></div>
-  <div class="card"><h3>🎓 Year-end certificates</h3><p class="mute">Issues certificates to members with at least 200 XP this academic year${me.role === "super_admin" ? ", at every institution" : ""}. Students who already have one are skipped.</p>
+  <div class="card"><h3>🎓 Year-end certificates</h3><p class="mute">Issues certificates to members with at least 400 XP this academic year${me.role === "super_admin" ? ", at every institution" : ""}. Students who already have one are skipped.</p>
     <button class="o" onclick="issueAll()">Issue certificates</button><p id="cmsg" class="mute"></p></div>
   <div class="card"><h3>🖼 Certificate template</h3><p class="mute">Use an A4 landscape image with the middle left clear: the student's details, activities and signature are printed on top of it. Without one, a plain green border is used.</p>
     <label for="ct_bg">Template image (JPG, PNG or WebP)</label><input id="ct_bg" type="file" accept="image/jpeg,image/png,image/webp"><p id="ct_bgs" class="mute" style="margin:.2rem 0"></p>
@@ -1195,7 +1217,7 @@ async function certPreview() {
   try {
     const template = await api("/api/admin/certificate-template", null, "GET");
     $("app").innerHTML = `<div class="row"><button class="s o" onclick="show('admin')">Back</button><button class="s" onclick="window.print()">Print</button></div><p class="mute">Sample details, to check the layout.</p>` + certHtml({ template,
-      tier: "Gold", student_name: "Sample Student", institution: "Sample Institute of Technology", city: "Bengaluru", usn: "1SI23CS001", registration_id: "GXP000123", xp_earned: 320,
+      tier: "Gold", student_name: "Sample Student", institution: "Sample Institute of Technology", city: "Bengaluru", state: "Karnataka", pincode: "560001", study_year: 2, usn: "1SI23CS001", registration_id: "GXP000123", xp_earned: 640,
       academic_year: "2026-27", issued_at: new Date().toISOString(), certificate_code: "A1B2C3D4E5F6",
       activities: [{ name: "Tree planting", times: 3, xp: 150 }, { name: "Cycle to campus", times: 12, xp: 120 }, { name: "Sustainability awareness program", times: 1, xp: 50 }] });
     fitCert();

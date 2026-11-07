@@ -197,7 +197,9 @@ app.get("/api/me/xp", auth, wrap(async (req, res) => {
 }));
 
 app.get("/api/me/certificates", auth, wrap(async (req, res) => {
-  res.json(await asUser(req.profile.id, (sql) => sql("select * from public.certificates where user_id = auth.uid()")));
+  // Newest academic year first, with the year label for each certificate.
+  res.json(await q(`select c.*, y.label academic_year from public.certificates c join public.academic_years y on y.id = c.academic_year_id
+    where c.user_id = $1 and c.status = 'issued' order by y.start_date desc`, [req.profile.id]));
 }));
 
 // Active activities of the student's college, optionally only some categories (?categories=Energy,Food).
@@ -682,19 +684,19 @@ app.put("/api/admin/certificate-template", auth, admin, wrap(async (req, res) =>
 // Everything printed on one student's certificate. The activities come from their verified record for that year.
 app.get("/api/me/certificates/:id/document", auth, wrap(async (req, res) => {
   const p = req.profile;
-  const c = await one(`select c.id, c.tier, c.xp_earned, c.certificate_code, c.issued_at, c.academic_year_id, y.label academic_year
+  const c = await one(`select c.id, c.tier, c.xp_earned, c.certificate_code, c.issued_at, c.academic_year_id, c.study_year, y.label academic_year
     from public.certificates c join public.academic_years y on y.id = c.academic_year_id
     where c.id = $1 and c.user_id = $2 and c.status = 'issued'`, [req.params.id, p.id]);
   if (!c) return res.status(404).json({ error: "Certificate not found" });
   const [college, activities, template] = await Promise.all([
-    one("select name, city from public.colleges where id = $1", [p.college_id]),
+    one("select name, city, state, pincode from public.colleges where id = $1", [p.college_id]),
     q(`select a.name, count(*)::int times, sum(t.amount)::int xp from public.xp_transactions t
       join public.activity_submissions s on s.id = t.reference_id and s.verification_status = 'verified'
       join public.activities a on a.id = s.activity_id
       where t.user_id = $1 and t.academic_year_id = $2 and t.source = 'activity' group by a.name order by xp desc, a.name`, [p.id, c.academic_year_id]),
     certificateTemplate(p.college_id),
   ]);
-  res.json({ ...c, student_name: p.full_name, usn: p.usn, registration_id: p.registration_id, institution: college?.name, city: college?.city, activities, template });
+  res.json({ ...c, student_name: p.full_name, usn: p.usn, registration_id: p.registration_id, institution: college?.name, city: college?.city, state: college?.state, pincode: college?.pincode, activities, template });
 }));
 
 // Enquiries go to the team's inbox, and a reply goes straight back to the person who asked. Anyone can use this, so it is
