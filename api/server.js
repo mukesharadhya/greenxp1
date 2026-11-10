@@ -132,6 +132,7 @@ const auth = wrap(async (req, res, next) => {
   req.user = await userFor(claims);
   req.profile = await one("select * from public.profiles where id = $1", [req.user.id]);
   if (!req.profile) return res.status(403).json({ error: "Your profile is not set up yet" });
+  if (req.profile.deleted_at) return res.status(403).json({ error: "This account has been deleted. Please contact greenxpglobal@gmail.com." });
   next();
 });
 const admin = (req, res, next) =>
@@ -249,7 +250,7 @@ app.get("/api/leaderboard", auth, paid, wrap(async (req, res) => {
       ranked as (select s.scope, rank() over (partition by s.scope order by x.xp desc)::int rank, p.id, coalesce(p.username, p.full_name) display_name,
           p.department, c.name college, x.xp, count(*) over (partition by s.scope)::int total
         from scopes s cross join x join public.profiles p on p.id = x.user_id join public.colleges c on c.id = p.college_id
-        where p.role = 'student' and p.leaderboard_visibility and p.account_status <> 'suspended' and p.approval_status <> 'rejected'
+        where p.role = 'student' and p.deleted_at is null and p.leaderboard_visibility and p.account_status <> 'suspended' and p.approval_status <> 'rejected'
           and x.xp > 0 and case s.scope when 'campus' then p.college_id = $2
             when 'city' then lower(trim(c.city)) = lower(trim($3)) and lower(trim(c.state)) = lower(trim(coalesce($4, c.state)))
             else lower(trim(c.state)) = lower(trim($4)) end)
@@ -391,13 +392,13 @@ const reviewScope = (p) => p.role === "super_admin" ? null : p.college_id;
 
 app.get("/api/admin/stats", auth, admin, wrap(async (req, res) => {
   res.json(await one(`select
-    (select count(*) from public.payments where status = 'submitted') "paymentsPending",
+    (select count(*) from public.payments py join public.profiles pp on pp.id = py.user_id where py.status = 'submitted' and pp.deleted_at is null) "paymentsPending",
     (select count(*) from public.activity_submissions ws join public.profiles wp on wp.id = ws.user_id
-      where ws.verification_status = 'pending' and ($2::uuid is null or wp.college_id = $2)) pending,
+      where ws.verification_status = 'pending' and wp.deleted_at is null and ($2::uuid is null or wp.college_id = $2)) pending,
     count(*) filter (where s.verification_status = 'verified' and s.verified_by is not null and s.verified_at >= now() - interval '7 days') "approvedWeek",
     count(*) filter (where s.verification_status = 'rejected' and s.verified_at >= now() - interval '7 days') "rejectedWeek",
-    (select count(*) from public.memberships m join public.profiles mp on mp.id = m.user_id where mp.college_id = $1 and m.status in ('active', 'waived')) members,
-    (select count(*) from public.profiles where college_id = $1 and role = 'student') students
+    (select count(*) from public.memberships m join public.profiles mp on mp.id = m.user_id where mp.college_id = $1 and mp.deleted_at is null and m.status in ('active', 'waived')) members,
+    (select count(*) from public.profiles where college_id = $1 and role = 'student' and deleted_at is null) students
     from public.activity_submissions s join public.profiles st on st.id = s.user_id where st.college_id = $1`, [req.profile.college_id, reviewScope(req.profile)]));
 }));
 
@@ -462,7 +463,7 @@ app.get("/api/admin/users", auth, admin, wrap(async (req, res) => {
       u.linkedin_url, u.photo_path, u.approval_note, u.approved_at, c.name college, case when u.approved_by is not null then json_build_object('full_name', r.full_name) end approver,
       (select m.status from public.memberships m join public.academic_years y on y.id = m.academic_year_id and y.is_current where m.user_id = u.id limit 1) membership
     from public.profiles u left join public.profiles r on r.id = u.approved_by left join public.colleges c on c.id = u.college_id
-    where ($1::uuid is null or u.college_id = $1) and u.role = 'student' and (u.approval_status = 'rejected') = $2
+    where ($1::uuid is null or u.college_id = $1) and u.role = 'student' and u.deleted_at is null and (u.approval_status = 'rejected') = $2
     order by ${blocked ? "u.approved_at" : "u.created_at"} desc limit 2000`, [reviewScope(req.profile), blocked]);
   await Promise.all(rows.map(async (u) => { u.photo_url = await photoUrl(u.photo_path); delete u.photo_path; }));
   res.json(rows);
@@ -495,6 +496,23 @@ app.post("/api/admin/users/review", auth, admin, wrap(async (req, res) => {
   res.json({ done: done.length, failed: ids.filter((id) => !done.some((u) => u.id === id)).map((id) => ({ id, error: "Not a student of your college" })) });
 }));
 
+// Delete students: they vanish from every admin list, leaderboard and count and can no longer sign in. Their records
+// (payments, XP, certificates) are kept but hidden, so a mistake can be undone in the database by clearing deleted_at.
+app.post("/api/admin/users/delete", auth, admin, wrap(async (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || !ids.length || ids.length > 500 || !ids.every(isId))
+    return res.status(400).json({ error: "Choose between 1 and 500 students" });
+  const done = await tx(async (sql) => {
+    const rows = await sql(`update public.profiles set deleted_at = now(), deleted_by = $2, account_status = 'suspended'
+      where id = any($1::uuid[]) and role = 'student' and deleted_at is null and ($3::uuid is null or college_id = $3)
+      returning id, full_name, email, usn`, [ids, req.user.id, reviewScope(req.profile)]);
+    if (rows.length) await sql(`insert into public.audit_logs (actor_id, action, target_type, target_id, details)
+      select $1, 'delete_user', 'profile', r->>'id', r from jsonb_array_elements($2::jsonb) r`, [req.user.id, JSON.stringify(rows)]);
+    return rows;
+  });
+  res.json({ done: done.length, failed: ids.filter((id) => !done.some((u) => u.id === id)).map((id) => ({ id, error: "Not a student of your college" })) });
+}));
+
 app.get("/api/admin/submissions", auth, admin, wrap(async (req, res) => {
   const status = ["pending", "verified", "rejected"].includes(req.query.status) ? req.query.status : "pending";
   const data = await q(`select s.id, s.user_id, s.submitted_at, s.proof_path, s.proof_hash, s.verification_status, s.rejection_reason, s.verified_at, s.details,
@@ -505,7 +523,7 @@ app.get("/api/admin/submissions", auth, admin, wrap(async (req, res) => {
     join public.activities a on a.id = s.activity_id
     join public.profiles st on st.id = s.user_id
     left join public.profiles rv on rv.id = s.verified_by
-    where s.verification_status = $1 and ($2::uuid is null or st.college_id = $2) ${status === "verified" ? "and s.verified_by is not null" : ""}
+    where s.verification_status = $1 and st.deleted_at is null and ($2::uuid is null or st.college_id = $2) ${status === "verified" ? "and s.verified_by is not null" : ""}
     order by ${status === "pending" ? "s.submitted_at" : "s.verified_at desc"} limit 100`, [status, reviewScope(req.profile)]);
 
   await Promise.all(data.filter((s) => s.proof_path).map(async (s) => {
@@ -579,7 +597,7 @@ const createInstitution = (template, r) => one("select public.create_institution
 
 app.get("/api/super/institutions", auth, superAdmin, wrap(async (req, res) => {
   res.json(await q(`select c.id, c.name, c.city, c.state, c.pincode, c.active, c.created_at,
-      count(p.id) filter (where p.role = 'student')::int students,
+      count(p.id) filter (where p.role = 'student' and p.deleted_at is null)::int students,
       coalesce(array_agg(p.email order by p.email) filter (where p.role in ('admin', 'super_admin')), '{}') admins
     from public.colleges c left join public.profiles p on p.college_id = c.id group by c.id order by c.name`));
 }));
@@ -654,7 +672,7 @@ app.get("/api/super/payments", auth, superAdmin, wrap(async (req, res) => {
   const rows = await q(`select y.id, y.amount, y.currency, y.upi_ref, y.proof_path, y.review_note, y.created_at, y.reviewed_at, c.name college,
       json_build_object('full_name', st.full_name, 'usn', st.usn, 'email', st.email) student
     from public.payments y join public.profiles st on st.id = y.user_id left join public.colleges c on c.id = st.college_id
-    where y.status = $1 and (y.upi_ref is not null or y.proof_path is not null)
+    where y.status = $1 and st.deleted_at is null and (y.upi_ref is not null or y.proof_path is not null)
     order by ${status === "submitted" ? "y.created_at" : "y.reviewed_at desc"} limit 200`, [status]);
   await Promise.all(rows.filter((r) => r.proof_path).map(async (r) => {
     r.proof_url = await getSignedUrl(s3, new GetObjectCommand({ Bucket: UPLOADS_BUCKET, Key: `payments/${r.proof_path}` }), { expiresIn: 600 });

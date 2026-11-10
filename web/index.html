@@ -1628,7 +1628,7 @@ function renderBulkBar(list = shown()) {
     <span><button class="s" onclick="reviewMany(true)"${adminSel.size ? "" : " disabled"}>Approve selected${adminSel.size ? ` (${adminSel.size})` : ""}</button>
     ${adminSection === "users" ? `<button class="s" onclick="reviewMany(true,undefined,true)"${adminSel.size ? "" : " disabled"} title="Waive this year's fee">Free year</button>` : ""}
     <button class="s o" onclick="reviewMany(false)"${adminSel.size ? "" : " disabled"}>${adminSection === "users" ? "Block" : "Reject"} selected</button>
-    ${adminSection === "users" ? `<button class="s o" onclick="downloadStudents()">⬇ Download list</button>` : ""}</span></div>` : "";
+    ${adminSection === "users" ? `<button class="s o danger" onclick="deleteStudents()"${adminSel.size ? "" : " disabled"}>Delete selected</button> <button class="s o" onclick="downloadStudents()">⬇ Download list</button>` : ""}</span></div>` : "";
 }
 const MEMBERSHIP = { active: "✅ Paid", waived: "🎁 Free year" };
 // The list on screen, as a spreadsheet. A leading ' stops Excel running a cell as a formula.
@@ -1659,8 +1659,8 @@ function userTable(list, pending) {
     ${pending
       ? `<td title="${esc(new Date(u.created_at).toLocaleString("en-IN"))}">${ago(u.created_at)}</td>
          <td>${u.approver ? `✅ Approved${u.approved_at ? " " + ago(u.approved_at) : ""}<br><span class="mute" style="font-size:.8rem">by ${esc(u.approver.full_name)}</span>` : "🆕 New"}</td>
-         <td class="acts">${u.approver ? "" : `<button class="s" onclick="reviewMany(true,['${u.id}'])">Approve</button> `}<button class="s o" onclick="reviewMany(true,['${u.id}'],true)">Free year</button> <button class="s o" onclick="reviewMany(false,['${u.id}'])">Block</button></td>`
-      : `<td>🚫 Blocked ${u.approved_at ? ago(u.approved_at) : ""}${u.approver ? `<br><span class="mute" style="font-size:.8rem">by ${esc(u.approver.full_name)}</span>` : ""}<br><button class="s o" onclick="reviewMany(true,['${u.id}'])">Unblock</button></td>
+         <td class="acts">${u.approver ? "" : `<button class="s" onclick="reviewMany(true,['${u.id}'])">Approve</button> `}<button class="s o" onclick="reviewMany(true,['${u.id}'],true)">Free year</button> <button class="s o" onclick="reviewMany(false,['${u.id}'])">Block</button> <button class="s o danger" onclick="deleteStudents(['${u.id}'])">Delete</button></td>`
+      : `<td>🚫 Blocked ${u.approved_at ? ago(u.approved_at) : ""}${u.approver ? `<br><span class="mute" style="font-size:.8rem">by ${esc(u.approver.full_name)}</span>` : ""}<br><button class="s o" onclick="reviewMany(true,['${u.id}'])">Unblock</button> <button class="s o danger" onclick="deleteStudents(['${u.id}'])">Delete</button></td>
          <td style="white-space:normal;min-width:180px">${u.approval_note ? esc(u.approval_note) : `<span class="mute">—</span>`}</td>`}</tr>`).join("") +
   `</tbody></table></div>`;
 }
@@ -1709,6 +1709,23 @@ function askReason(reasons) {
     d.onclose = () => done(d.returnValue === "ok" ? ($("rjt").value.trim() || $("rjs").value || "Rejected by admin") : null);
     d.returnValue = ""; d.showModal();
   });
+}
+// Delete students: they disappear from every list, leaderboard and count, and can no longer sign in.
+async function deleteStudents(ids = [...adminSel]) {
+  if (!ids.length) return;
+  const names = ids.map(id => adminData.find(u => u.id === id)?.full_name || "a student");
+  const who = names.length === 1 ? names[0] : `these ${names.length} students${names.length <= 5 ? ` (${names.join(", ")})` : ""}`;
+  if (!confirm(`Delete ${who}?\n\nThey will disappear from your lists, leaderboards and counts, and won't be able to sign in any more. This can't be undone from the admin portal.`)) return;
+  say("Deleting…");
+  try {
+    const r = await api("/api/admin/users/delete", { ids });
+    const failed = new Set(r.failed.map(x => x.id));
+    adminData = adminData.filter(u => !ids.includes(u.id) || failed.has(u.id));
+    ids.forEach(id => adminSel.delete(id));
+    renderQueue(); loadStats();
+    if (r.failed.length) say([...new Set(r.failed.map(x => x.error))].join(". "), 1);
+    else say(`${r.done} student${r.done === 1 ? "" : "s"} deleted.`);
+  } catch (e) { say(e.message, 1); }
 }
 async function reviewMany(approve, ids = [...adminSel], waive = false) {
   const S = SECTIONS[adminSection];

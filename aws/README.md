@@ -64,6 +64,7 @@ The super admin reviews activities and issues certificates for every institution
 Admin portal > Students lists every registered student with a Download list button. **Approve** only marks a student's details as
 checked (status New or Approved); it never blocks them. Students can upload a photo (JPG or PNG, zoomed and positioned in the browser, saved as a 600x600 JPG; S3 `photos/`) and a LinkedIn link,
 both optional, when registering or from Edit profile on Home.
+**Delete** (per row, or Delete selected) removes a student from every admin list, leaderboard and count and stops them signing in. Their payments, XP and certificates stay in the database (profiles.deleted_at / deleted_by, account_status suspended); to undo a mistake, set deleted_at back to null and account_status to normal.
 
 ## Certificates
 
